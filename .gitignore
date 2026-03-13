@@ -3,4 +3,5 @@
 __pycache__/
 *.pyc
 *.pyo
-.streamlit/
+.streamlit/mitre_cache.json
+mitre_cache.json

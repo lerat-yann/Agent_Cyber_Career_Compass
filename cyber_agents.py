@@ -9,6 +9,7 @@ Chaque agent spécialisé est wrappé en function_tool pour être appelé par le
 from agents import Agent, Runner, function_tool
 from config import groq_model
 from tools import (
+    get_mitre_latest_techniques,
     get_role_details,
     get_skills_for_role,
     get_learning_resources,
@@ -176,7 +177,7 @@ agent_knowledge_map = Agent(
         "- Citer les sources réelles (MITRE ATT&CK, NIST NVD)\n"
         "- Réponds en français"
     ),
-    tools=[get_mitre_techniques_for_role, get_mitre_groups_and_software, get_mitre_cve_context],
+    tools=[get_mitre_techniques_for_role, get_mitre_groups_and_software, get_mitre_cve_context, get_mitre_latest_techniques],
     model=groq_model,
 )
 

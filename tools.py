@@ -2,16 +2,18 @@
 Outils réels pour le Cyber Career Compass.
 
 Sources de données :
-- MITRE ATT&CK REST API  : https://attack.mitre.org/api/  (gratuit, sans clé)
-- NIST NICE Framework    : données structurées statiques (standard public NIST SP 800-181)
-- CyberSeek / CompTIA    : données de marché emploi cyber (structurées statiques)
+- MITRE ATT&CK STIX/TAXII : https://github.com/mitre/cti (gratuit, sans clé)
+- NIST NICE Framework     : données structurées statiques (standard public NIST SP 800-181)
+- NIST NVD API v2.0       : https://nvd.nist.gov/ (gratuit, 5 req/30s sans clé)
 """
 
 import json
 import requests
 from agents import function_tool
 
-MITRE_API_BASE = "https://attack.mitre.org/api"
+MITRE_CTI_URL = "https://raw.githubusercontent.com/mitre/cti/master/enterprise-attack/enterprise-attack.json"
+MITRE_CACHE_FILE = "mitre_cache.json"  # Cache disque local
+_mitre_cache = None  # Cache mémoire secondaire
 REQUEST_TIMEOUT = 10
 
 # ── Données NIST NICE Framework (SP 800-181 Rev 1) ──────────────────────────
@@ -493,49 +495,56 @@ def get_mitre_techniques_for_role(role_keyword: str) -> str:
         matched_tactics = ["TA0001", "TA0002", "TA0003"]
 
     try:
-        # Appel à l'API MITRE ATT&CK officielle
-        url = f"{MITRE_API_BASE}/techniques/"
-        params = {"domain": "enterprise-attack", "limit": 200}
-        response = requests.get(url, params=params, timeout=REQUEST_TIMEOUT)
+        techniques = _load_mitre_techniques()
+        if not techniques:
+            return json.dumps({"fallback": _get_mitre_fallback(role_keyword)}, ensure_ascii=False)
 
-        if response.status_code != 200:
-            return json.dumps({"error": f"API MITRE non disponible (HTTP {response.status_code})",
-                               "fallback": _get_mitre_fallback(role_keyword)}, ensure_ascii=False)
+        # Mots-clés tactiques par rôle pour filtrer
+        tactic_keywords = {
+            "soc": ["defense-evasion", "discovery", "lateral-movement", "command-and-control", "exfiltration"],
+            "pentest": ["initial-access", "execution", "privilege-escalation", "discovery", "lateral-movement"],
+            "cloud": ["initial-access", "privilege-escalation", "defense-evasion", "exfiltration"],
+            "incident": ["persistence", "defense-evasion", "discovery", "lateral-movement", "exfiltration"],
+            "threat": ["initial-access", "execution", "persistence", "command-and-control"],
+            "grc": ["initial-access", "persistence", "exfiltration"],
+            "appsec": ["initial-access", "execution", "privilege-escalation"],
+        }
+        role_lower = role_keyword.lower()
+        matched_kw = []
+        for key, kws in tactic_keywords.items():
+            if key in role_lower:
+                matched_kw = kws
+                break
+        if not matched_kw:
+            matched_kw = ["initial-access", "execution", "discovery"]
 
-        data = response.json()
-        techniques = data.get("data", [])
-
-        # Filtrer les techniques par tactiques pertinentes
         relevant = []
         for tech in techniques:
-            tech_tactics = [t.get("id", "") for t in tech.get("tactics", [])]
-            if any(t in matched_tactics for t in tech_tactics):
+            kill_chain = tech.get("kill_chain_phases", [])
+            tech_phases = [p.get("phase_name", "") for p in kill_chain]
+            if any(kw in tech_phases for kw in matched_kw):
+                ext_refs = tech.get("external_references", [])
+                tech_id = next((r.get("external_id", "") for r in ext_refs if r.get("source_name") == "mitre-attack"), "")
+                tech_url = next((r.get("url", "") for r in ext_refs if r.get("source_name") == "mitre-attack"), "")
+                desc = tech.get("description", "")
                 relevant.append({
-                    "id": tech.get("external_id", ""),
+                    "id": tech_id,
                     "name": tech.get("name", ""),
-                    "description_short": tech.get("description", "")[:200] if tech.get("description") else "",
-                    "tactics": [t.get("name", "") for t in tech.get("tactics", [])],
-                    "url": f"https://attack.mitre.org/techniques/{tech.get('external_id', '').replace('.', '/')}/" if tech.get("external_id") else "",
+                    "description_short": desc[:200] if desc else "",
+                    "tactics": tech_phases,
+                    "url": tech_url,
                 })
 
-        # Limiter à 10 techniques les plus pertinentes
         relevant = relevant[:10]
-
         return json.dumps({
-            "source": "MITRE ATT&CK Enterprise Matrix (données réelles)",
+            "source": "MITRE ATT&CK Enterprise Matrix (données réelles live)",
             "role_queried": role_keyword,
-            "relevant_tactics": matched_tactics,
             "techniques_count": len(relevant),
             "techniques": relevant,
         }, ensure_ascii=False)
 
-    except requests.exceptions.ConnectionError:
-        return json.dumps({
-            "error": "Impossible de contacter l'API MITRE ATT&CK (vérifier la connexion internet)",
-            "fallback": _get_mitre_fallback(role_keyword),
-        }, ensure_ascii=False)
     except Exception as e:
-        return json.dumps({"error": f"Erreur API MITRE : {str(e)}",
+        return json.dumps({"error": f"Erreur MITRE : {str(e)}",
                            "fallback": _get_mitre_fallback(role_keyword)}, ensure_ascii=False)
 
 
@@ -547,31 +556,36 @@ def get_mitre_groups_and_software(search_term: str) -> str:
     Source : https://attack.mitre.org/api/ (gratuit, sans clé API)
     """
     try:
-        # Récupérer les groupes APT
-        groups_url = f"{MITRE_API_BASE}/groups/"
-        groups_resp = requests.get(groups_url, params={"limit": 50}, timeout=REQUEST_TIMEOUT)
+        data = _load_mitre_raw()
+        if not data:
+            return json.dumps({"error": "Données MITRE non disponibles"}, ensure_ascii=False)
 
-        results = {"source": "MITRE ATT&CK (données réelles)", "groups": [], "software": []}
+        objects = data.get("objects", [])
+        search_lower = search_term.lower()
+        results = {"source": "MITRE ATT&CK Enterprise Matrix (données réelles live)", "groups": [], "software": []}
 
-        if groups_resp.status_code == 200:
-            groups_data = groups_resp.json().get("data", [])
-            search_lower = search_term.lower()
-            for group in groups_data[:20]:
-                name = group.get("name", "").lower()
-                desc = group.get("description", "").lower()
-                if search_lower in name or search_lower in desc or search_lower in ["apt", "all", "threat"]:
+        for obj in objects:
+            if obj.get("type") == "intrusion-set":
+                name = obj.get("name", "").lower()
+                desc = (obj.get("description", "") or "").lower()
+                aliases = [a.lower() for a in obj.get("aliases", [])]
+                if search_lower in name or search_lower in desc or any(search_lower in a for a in aliases) or search_lower in ["apt", "all", "threat", "groupe"]:
+                    ext_refs = obj.get("external_references", [])
+                    group_id = next((r.get("external_id", "") for r in ext_refs if r.get("source_name") == "mitre-attack"), "")
+                    group_url = next((r.get("url", "") for r in ext_refs if r.get("source_name") == "mitre-attack"), "")
                     results["groups"].append({
-                        "name": group.get("name", ""),
-                        "aliases": group.get("aliases", [])[:3],
-                        "description": group.get("description", "")[:200] if group.get("description") else "",
-                        "url": f"https://attack.mitre.org/groups/{group.get('external_id', '')}/",
+                        "name": obj.get("name", ""),
+                        "id": group_id,
+                        "aliases": obj.get("aliases", [])[:3],
+                        "description": obj.get("description", "")[:250] if obj.get("description") else "",
+                        "url": group_url,
                     })
 
-        results["groups"] = results["groups"][:5]
+        results["groups"] = results["groups"][:8]
         return json.dumps(results, ensure_ascii=False)
 
     except Exception as e:
-        return json.dumps({"error": f"Erreur API MITRE groupes : {str(e)}"}, ensure_ascii=False)
+        return json.dumps({"error": f"Erreur MITRE groupes : {str(e)}"}, ensure_ascii=False)
 
 
 @function_tool
@@ -820,7 +834,109 @@ def get_all_roles_overview() -> str:
     }, ensure_ascii=False)
 
 
+
+@function_tool
+def get_mitre_latest_techniques(limit: int = 10) -> str:
+    """
+    Récupère les techniques MITRE ATT&CK les plus récentes depuis l'API officielle.
+    Utile pour répondre aux questions générales sur MITRE ATT&CK et ses mises à jour.
+    Source : https://attack.mitre.org/api/ (gratuit, sans clé)
+    """
+    try:
+        techniques = _load_mitre_techniques()
+        if not techniques:
+            return json.dumps({"error": "Données MITRE non disponibles",
+                               "reference": "https://attack.mitre.org/resources/updates/"}, ensure_ascii=False)
+
+        # Trier par date de modification
+        dated = []
+        for t in techniques:
+            modified = t.get("modified", "") or t.get("created", "")
+            dated.append((modified, t))
+        dated.sort(key=lambda x: x[0], reverse=True)
+
+        recent = []
+        for _, t in dated[:limit]:
+            ext_refs = t.get("external_references", [])
+            tech_id = next((r.get("external_id", "") for r in ext_refs if r.get("source_name") == "mitre-attack"), "")
+            tech_url = next((r.get("url", "") for r in ext_refs if r.get("source_name") == "mitre-attack"), "")
+            phases = [p.get("phase_name", "") for p in t.get("kill_chain_phases", [])]
+            desc = t.get("description", "")
+            recent.append({
+                "id": tech_id,
+                "name": t.get("name", ""),
+                "modified": t.get("modified", "")[:10] if t.get("modified") else "",
+                "created": t.get("created", "")[:10] if t.get("created") else "",
+                "tactics": phases,
+                "description": desc[:200] if desc else "",
+                "url": tech_url,
+            })
+
+        return json.dumps({
+            "source": "MITRE ATT&CK Enterprise Matrix (données réelles live — GitHub mitre/cti)",
+            "total_techniques_in_matrix": len(techniques),
+            "most_recent_techniques": recent,
+            "reference": "https://attack.mitre.org/resources/updates/",
+        }, ensure_ascii=False)
+
+    except Exception as e:
+        return json.dumps({"error": f"Erreur : {str(e)}"}, ensure_ascii=False)
+
 # ── Helpers internes ─────────────────────────────────────────────────────────
+
+def _load_mitre_raw() -> dict:
+    """
+    Charge le fichier STIX MITRE ATT&CK.
+    Priorité : cache mémoire → cache disque → téléchargement GitHub.
+    Le cache disque évite de re-télécharger 45 Mo à chaque session.
+    """
+    global _mitre_cache
+    import os, time
+
+    # 1. Cache mémoire (même processus)
+    if _mitre_cache is not None:
+        return _mitre_cache
+
+    # 2. Cache disque (fichier local, valide 7 jours)
+    if os.path.exists(MITRE_CACHE_FILE):
+        age_days = (time.time() - os.path.getmtime(MITRE_CACHE_FILE)) / 86400
+        if age_days < 7:
+            try:
+                with open(MITRE_CACHE_FILE, "r", encoding="utf-8") as f:
+                    _mitre_cache = json.load(f)
+                    return _mitre_cache
+            except Exception:
+                pass
+
+    # 3. Téléchargement depuis GitHub
+    try:
+        response = requests.get(MITRE_CTI_URL, timeout=90)
+        if response.status_code == 200:
+            _mitre_cache = response.json()
+            # Sauvegarder sur disque pour les prochains appels
+            try:
+                with open(MITRE_CACHE_FILE, "w", encoding="utf-8") as f:
+                    json.dump(_mitre_cache, f)
+            except Exception:
+                pass
+            return _mitre_cache
+    except Exception:
+        pass
+    return {}
+
+
+def _load_mitre_techniques() -> list:
+    """Retourne uniquement les objets de type attack-pattern (techniques)."""
+    data = _load_mitre_raw()
+    if not data:
+        return []
+    return [
+        obj for obj in data.get("objects", [])
+        if obj.get("type") == "attack-pattern"
+        and not obj.get("x_mitre_deprecated", False)
+        and not obj.get("revoked", False)
+    ]
+
 
 def _get_mitre_fallback(role_keyword: str) -> dict:
     """Données de secours si l'API MITRE est indisponible."""
