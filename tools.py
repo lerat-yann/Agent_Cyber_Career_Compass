@@ -5,9 +5,11 @@ Sources de données :
 - MITRE ATT&CK STIX/TAXII : https://github.com/mitre/cti (gratuit, sans clé)
 - NIST NICE Framework     : données structurées statiques (standard public NIST SP 800-181)
 - NIST NVD API v2.0       : https://nvd.nist.gov/ (gratuit, 5 req/30s sans clé)
+- France Travail API v2    : https://francetravail.io/ (offres emploi cyber live)
 """
 
 import json
+import os
 import requests
 from agents import function_tool
 
@@ -881,6 +883,197 @@ def get_mitre_latest_techniques(limit: int = 10) -> str:
 
     except Exception as e:
         return json.dumps({"error": f"Erreur : {str(e)}"}, ensure_ascii=False)
+
+# ── API France Travail (offres emploi cyber en temps réel) ───────────────────
+# Source : https://francetravail.io/data/api/offres-emploi
+# Credentials dans .env : FRANCE_TRAVAIL_CLIENT_ID + FRANCE_TRAVAIL_CLIENT_SECRET
+
+FT_TOKEN_URL = "https://entreprise.francetravail.fr/connexion/oauth2/access_token"
+FT_OFFRES_URL = "https://api.francetravail.io/partenaire/offresdemploi/v2/offres/search"
+_ft_token_cache = {"token": None, "expires_at": 0}
+
+
+def _get_france_travail_token() -> str:
+    """Obtient un token OAuth2 France Travail (valide 30 min, mis en cache)."""
+    import time
+    if _ft_token_cache["token"] and time.time() < _ft_token_cache["expires_at"] - 60:
+        return _ft_token_cache["token"]
+
+    client_id = os.environ.get("FRANCE_TRAVAIL_CLIENT_ID", "")
+    client_secret = os.environ.get("FRANCE_TRAVAIL_CLIENT_SECRET", "")
+
+    if not client_id or not client_secret:
+        return ""
+
+    try:
+        resp = requests.post(
+            FT_TOKEN_URL,
+            params={"realm": "/partenaire"},
+            data={
+                "grant_type": "client_credentials",
+                "client_id": client_id,
+                "client_secret": client_secret,
+                "scope": "api_offresdemploiv2 o2dsoffre",
+            },
+            timeout=10,
+        )
+        if resp.status_code == 200:
+            data = resp.json()
+            _ft_token_cache["token"] = data.get("access_token", "")
+            _ft_token_cache["expires_at"] = time.time() + data.get("expires_in", 1800)
+            return _ft_token_cache["token"]
+    except Exception:
+        pass
+    return ""
+
+
+@function_tool
+def get_job_market_data(role_name: str) -> str:
+    """
+    Recherche en temps réel les offres d'emploi cybersécurité en France via l'API France Travail.
+
+    DOIT être appelé pour TOUTE question sur le marché de l'emploi cyber :
+    nombre d'offres, postes disponibles, tendances de recrutement, salaires réels.
+    Ne JAMAIS répondre de mémoire sur ces sujets — toujours appeler cet outil.
+
+    Args:
+        role_name: Nom du métier ou mot-clé de recherche.
+                   Exemples : "pentester", "SOC analyst", "cloud security",
+                   "incident responder", "GRC", "threat intelligence",
+                   "appsec", "security engineer", "RSSI", "cybersecurite"
+
+    Returns:
+        JSON avec : nombre total d'offres en France, échantillon d'offres détaillées,
+        compétences les plus demandées, salaires mentionnés.
+        Source : API France Travail v2 (données live).
+    """
+    # Mapping métier → mots-clés de recherche France Travail
+    # IMPORTANT : mots-clés courts et simples (sans accents) pour maximiser les résultats
+    role_keywords = {
+        "soc": "analyste SOC",
+        "soc_analyst": "analyste SOC",
+        "pentester": "pentester",
+        "pentest": "test intrusion",
+        "cloud": "securite cloud",
+        "cloud_security": "securite cloud",
+        "incident": "incident securite",
+        "incident_responder": "incident securite",
+        "threat": "threat intelligence",
+        "threat_intelligence": "threat intelligence",
+        "grc": "conformite securite",
+        "appsec": "securite applicative",
+        "appsec_engineer": "securite applicative",
+        "security_engineer": "ingenieur securite",
+        "security": "securite informatique",
+        "rssi": "RSSI",
+        "devsecops": "devsecops",
+    }
+
+    role_lower = role_name.lower().replace(" ", "_").replace("-", "_")
+    keyword = None
+    for key, kw in role_keywords.items():
+        if key in role_lower:
+            keyword = kw
+            break
+    if not keyword:
+        keyword = role_name  # Utiliser le terme brut de l'utilisateur
+
+    token = _get_france_travail_token()
+    if not token:
+        return json.dumps({
+            "error": "Credentials France Travail manquants ou invalides",
+            "hint": "Vérifiez FRANCE_TRAVAIL_CLIENT_ID et FRANCE_TRAVAIL_CLIENT_SECRET dans .env",
+        }, ensure_ascii=False)
+
+    try:
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/json",
+        }
+        # PAS de filtre "domaine" — il provoque une erreur 400
+        params = {
+            "motsCles": keyword,
+            "range": "0-14",  # 15 premières offres
+        }
+        resp = requests.get(FT_OFFRES_URL, headers=headers, params=params, timeout=15)
+
+        if resp.status_code == 204:
+            # 204 = aucun résultat — on retente avec "cybersecurite" en fallback
+            params["motsCles"] = "cybersecurite"
+            resp = requests.get(FT_OFFRES_URL, headers=headers, params=params, timeout=15)
+            if resp.status_code == 204:
+                return json.dumps({
+                    "role_searched": role_name,
+                    "keyword_used": keyword,
+                    "total_offers": 0,
+                    "message": "Aucune offre trouvée pour ce métier en ce moment",
+                    "source": "France Travail API v2 (données live)",
+                }, ensure_ascii=False)
+            keyword = "cybersecurite (fallback)"
+
+        # France Travail retourne 200 OU 206 (Partial Content) quand il y a des résultats
+        if resp.status_code not in (200, 206):
+            return json.dumps({
+                "error": f"API France Travail erreur HTTP {resp.status_code}",
+                "detail": resp.text[:200],
+            }, ensure_ascii=False)
+
+        data = resp.json()
+        # Content-Range header format: "offres 0-14/1026" → on extrait "1026"
+        content_range = resp.headers.get("Content-Range", "")
+        if "/" in content_range:
+            total = content_range.split("/")[-1]
+        else:
+            total = len(data.get("resultats", []))
+        offres = data.get("resultats", [])
+
+        # Extraire les infos clés des offres
+        offers_summary = []
+        salaires = []
+        competences_count = {}
+
+        for offre in offres[:10]:
+            # Salaire
+            sal = offre.get("salaire", {})
+            if sal.get("libelle"):
+                salaires.append(sal["libelle"])
+
+            # Compétences
+            for comp in offre.get("competences", []):
+                libelle = comp.get("libelle", "")
+                if libelle:
+                    competences_count[libelle] = competences_count.get(libelle, 0) + 1
+
+            offers_summary.append({
+                "titre": offre.get("intitule", ""),
+                "entreprise": offre.get("entreprise", {}).get("nom", "Non précisé"),
+                "lieu": offre.get("lieuTravail", {}).get("libelle", ""),
+                "contrat": offre.get("typeContratLibelle", ""),
+                "salaire": sal.get("libelle", "Non précisé"),
+                "date_creation": offre.get("dateCreation", "")[:10] if offre.get("dateCreation") else "",
+                "url": f"https://candidat.francetravail.fr/offres/recherche/detail/{offre.get('id', '')}",
+            })
+
+        # Top compétences demandées
+        top_competences = sorted(competences_count.items(), key=lambda x: x[1], reverse=True)[:8]
+
+        return json.dumps({
+            "source": "France Travail API v2 (données live — marché emploi français)",
+            "role_searched": role_name,
+            "keyword_used": keyword,
+            "total_offers_france": int(total) if str(total).isdigit() else len(offres),
+            "sample_offers": offers_summary,
+            "top_skills_demanded": [{"skill": k, "count": v} for k, v in top_competences],
+            "salaires_mentionnes": salaires[:5],
+            "note": "Données extraites en temps réel depuis France Travail",
+        }, ensure_ascii=False)
+
+    except requests.exceptions.ConnectionError:
+        return json.dumps({"error": "Impossible de contacter l'API France Travail"}, ensure_ascii=False)
+    except Exception as e:
+        return json.dumps({"error": f"Erreur France Travail : {str(e)}"}, ensure_ascii=False)
+
+
 
 # ── Helpers internes ─────────────────────────────────────────────────────────
 

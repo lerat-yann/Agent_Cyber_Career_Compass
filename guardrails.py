@@ -18,6 +18,9 @@ CYBER_CAREER_KEYWORDS = [
     "hacking", "vulnérabilité", "exploit", "owasp", "mitre",
     "siem", "iam", "forensic", "malware", "phishing", "ransomware",
     "pentest", "audit", "test d'intrusion",
+    # Référentiels et bases de données (questions éducatives légitimes)
+    "cve-", "cve ", "nvd", "cvss", "nist", "att&ck", "stix",
+    "taxii", "apt", "technique t1", "groupe apt",
     # Contexte général
     "cyber", "infosec", "sécurité", "réseau", "linux", "python",
 ]
@@ -76,10 +79,16 @@ async def cyber_career_guardrail(ctx, agent, input):
         instructions=(
             "Tu détermines si une requête concerne l'orientation professionnelle en cybersécurité, "
             "l'apprentissage des métiers cyber, la compréhension des rôles, compétences ou ressources "
-            "pédagogiques en sécurité informatique.\n"
-            "IMPORTANT : Une question générale sur la sécurité, le réseau, ou le code "
-            "dans un contexte d'apprentissage est AUTORISÉE.\n"
-            "Une demande d'exploitation réelle d'un système est REFUSÉE.\n"
+            "pédagogiques en sécurité informatique.\n\n"
+            "AUTORISÉ (réponds 'orientation_cyber') :\n"
+            "- Questions sur les métiers, compétences, formations, certifications\n"
+            "- Questions sur les concepts cyber (MITRE ATT&CK, CVE, CVSS, APT, OWASP...)\n"
+            "- Demander le contexte ou l'explication d'un CVE spécifique (ex: CVE-2024-3400)\n"
+            "- Questions générales sur la sécurité, le réseau, ou le code dans un contexte d'apprentissage\n"
+            "- Questions sur le marché de l'emploi en cybersécurité\n\n"
+            "REFUSÉ (réponds 'hors_sujet') :\n"
+            "- Demande d'exploitation réelle d'un système ou d'un site\n"
+            "- Questions totalement hors domaine cyber (cuisine, sport, etc.)\n\n"
             "Réponds UNIQUEMENT par 'orientation_cyber' ou 'hors_sujet'. Rien d'autre."
         ),
         model=groq_model_fast,

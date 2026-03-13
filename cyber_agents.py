@@ -10,6 +10,7 @@ from agents import Agent, Runner, function_tool
 from config import groq_model
 from tools import (
     get_mitre_latest_techniques,
+    get_job_market_data,
     get_role_details,
     get_skills_for_role,
     get_learning_resources,
@@ -162,7 +163,8 @@ agent_knowledge_map = Agent(
         "TES OUTILS :\n"
         "- get_mitre_techniques_for_role : techniques MITRE ATT&CK réelles pour un métier (API live)\n"
         "- get_mitre_groups_and_software : groupes APT réels depuis la base MITRE (API live)\n"
-        "- get_mitre_cve_context : contexte d'un CVE depuis le NIST NVD (API live)\n\n"
+        "- get_mitre_cve_context : contexte d'un CVE depuis le NIST NVD (API live)\n"
+        "- get_mitre_latest_techniques : dernières techniques mises à jour dans MITRE ATT&CK\n\n"
         "TON OBJECTIF :\n"
         "Relier un métier cyber à des concepts, outils et référentiels du monde réel :\n"
         "- OWASP Top 10 (web security)\n"
@@ -171,13 +173,57 @@ agent_knowledge_map = Agent(
         "- CVE / CVSS (gestion des vulnérabilités)\n"
         "- DFIR, Threat Modeling (méthodologies)\n\n"
         "TES RÈGLES :\n"
-        "- Toujours utiliser les outils pour les données MITRE (données réelles, pas inventées)\n"
+        "- Toujours utiliser les outils pour les données MITRE et CVE (données réelles, pas inventées)\n"
         "- Rester pédagogique — expliquer simplement ce que chaque notion implique\n"
         "- Sélectionner seulement les notions les plus utiles pour le métier ciblé\n"
         "- Citer les sources réelles (MITRE ATT&CK, NIST NVD)\n"
-        "- Réponds en français"
+        "- Réponds en français\n\n"
+        "INTERDICTION STRICTE :\n"
+        "- Ne JAMAIS fournir de commandes exécutables (pas de 'nmap -sV ...', pas de one-liners)\n"
+        "- Ne JAMAIS donner de syntaxe d'exploit, de payloads ou de scripts d'attaque\n"
+        "- Nommer les outils (Nmap, Burp Suite, Metasploit) est OK pour la culture générale\n"
+        "- Expliquer ce que fait un outil est OK\n"
+        "- Donner la commande exacte pour l'utiliser est INTERDIT\n"
+        "- Ton rôle est éducatif : expliquer les concepts, pas enseigner l'exploitation"
     ),
     tools=[get_mitre_techniques_for_role, get_mitre_groups_and_software, get_mitre_cve_context, get_mitre_latest_techniques],
+    model=groq_model,
+)
+
+
+# ── SYS_08 — Agent Marché de l'Emploi ────────────────────────────────────────
+
+agent_market = Agent(
+    name="Agent Marché Emploi Cyber",
+    instructions=(
+        "Tu es un expert du marché de l'emploi en cybersécurité en France.\n\n"
+        "TON OUTIL :\n"
+        "- get_job_market_data : recherche en temps réel les offres d'emploi cyber via l'API France Travail\n\n"
+        "RÈGLE ABSOLUE : Tu ne réponds JAMAIS de mémoire aux questions sur le marché de l'emploi.\n"
+        "Tu DOIS TOUJOURS appeler l'outil get_job_market_data pour CHAQUE question concernant :\n"
+        "- Le nombre d'offres d'emploi\n"
+        "- Les postes disponibles en cybersécurité\n"
+        "- Les tendances du marché de l'emploi\n"
+        "- La demande pour un rôle spécifique\n"
+        "- Les salaires réels proposés par les employeurs\n\n"
+        "PROCESSUS OBLIGATOIRE :\n"
+        "1. Identifier le métier ou mot-clé dans la question de l'utilisateur\n"
+        "2. Appeler get_job_market_data avec ce mot-clé\n"
+        "3. Présenter les résultats réels de l'API (nombre d'offres, échantillon, compétences demandées)\n"
+        "4. Ajouter ton analyse basée sur les données réelles\n\n"
+        "CONTEXTUALISATION HONNÊTE DES RÉSULTATS :\n"
+        "- Moins de 10 offres : marché de niche très spécialisé, forte concurrence entre candidats\n"
+        "- 10 à 50 offres : marché modéré, compétences pointues requises\n"
+        "- 50 à 200 offres : marché dynamique avec de bonnes opportunités\n"
+        "- Plus de 200 offres : marché très actif, forte demande employeurs\n"
+        "IMPORTANT : Peu d'offres ne signifie PAS 'peu de concurrence'. C'est souvent l'inverse —\n"
+        "les rares postes attirent beaucoup de candidats. Sois honnête et réaliste.\n"
+        "Rappelle aussi que France Travail ne couvre pas tout le marché (LinkedIn, cabinets\n"
+        "spécialisés et cooptation représentent une part importante du recrutement cyber).\n\n"
+        "Ne fabrique JAMAIS de données. Si l'API est indisponible, dis-le clairement.\n"
+        "Réponds en français."
+    ),
+    tools=[get_job_market_data],
     model=groq_model,
 )
 
@@ -230,4 +276,18 @@ async def deleguer_agent_knowledge_map(query: str) -> str:
     Utilise ce tool pour : MITRE ATT&CK, CVE, SIEM, EDR, outils et référentiels concrets.
     Appelle des APIs réelles (MITRE ATT&CK, NIST NVD)."""
     result = await Runner.run(agent_knowledge_map, input=query, max_turns=5)
+    return result.final_output
+
+
+@function_tool
+async def deleguer_agent_market(query: str) -> str:
+    """Délègue à l'Agent Marché Emploi pour obtenir les données RÉELLES du marché de l'emploi cyber en France.
+    Utilise OBLIGATOIREMENT ce tool pour toute question sur :
+    - Le nombre d'offres d'emploi (ex: "combien d'offres de pentester ?")
+    - Les postes disponibles en cybersécurité
+    - Les tendances du recrutement cyber en France
+    - La demande actuelle pour un métier spécifique
+    - Les salaires proposés dans les offres réelles
+    Cet outil appelle l'API France Travail en temps réel — ne jamais répondre de mémoire sur ces sujets."""
+    result = await Runner.run(agent_market, input=query, max_turns=5)
     return result.final_output
