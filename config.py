@@ -1,10 +1,11 @@
 import os
+import streamlit as st
 from dotenv import load_dotenv
 from agents import OpenAIChatCompletionsModel, AsyncOpenAI, set_tracing_disabled
 
 load_dotenv()
 
-GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY") or st.secrets.get("GROQ_API_KEY")
 
 if not GROQ_API_KEY:
     raise ValueError(
