@@ -8,6 +8,7 @@ Chaque agent spécialisé est wrappé en function_tool pour être appelé par le
 
 from agents import Agent, Runner, function_tool
 from config import groq_model
+from agent_learning_coach import agent_learning_coach, RESSOURCES
 from tools import (
     get_mitre_latest_techniques,
     get_job_market_data,
@@ -19,6 +20,20 @@ from tools import (
     get_mitre_techniques_for_role,
     get_mitre_groups_and_software,
     get_mitre_cve_context,
+)
+
+# ══════════════════════════════════════════════════════════════════════════════
+# RÈGLE COMMUNE À TOUS LES AGENTS
+# ══════════════════════════════════════════════════════════════════════════════
+REGLE_ANTI_HALLUCINATION = (
+    "\n\nRÈGLE ANTI-HALLUCINATION (CRITIQUE) :\n"
+    "- Ne JAMAIS inventer de chiffres sur le marché de l'emploi (nombre d'offres, "
+    "tendances, pourcentages de croissance, nombre de postes vacants).\n"
+    "- Ne JAMAIS inventer de fourchettes de salaire basées sur le marché réel.\n"
+    "- Les seuls salaires que tu peux mentionner sont ceux présents dans les données "
+    "NICE Framework retournées par tes outils (salary_range_fr).\n"
+    "- Si tu n'as pas de données réelles sur le marché, ne mentionne PAS le marché.\n"
+    "- Préfère dire 'consultez les données marché actuelles' plutôt qu'inventer des chiffres.\n"
 )
 
 # ── SYS_01 — Agent Métiers ───────────────────────────────────────────────────
@@ -39,6 +54,7 @@ agent_roles = Agent(
         "- Mentionner le niveau d'entrée réaliste\n"
         "- Citer la source (NIST NICE Framework) quand pertinent\n"
         "- Réponds en français"
+        + REGLE_ANTI_HALLUCINATION
     ),
     tools=[get_role_details, compare_roles, get_all_roles_overview],
     model=groq_model,
@@ -59,6 +75,7 @@ agent_skills = Agent(
         "- Expliquer brièvement pourquoi chaque compétence est utile dans ce métier\n"
         "- Distinguer compétences fondamentales vs spécifiques au métier\n"
         "- Réponds en français"
+        + REGLE_ANTI_HALLUCINATION
     ),
     tools=[get_skills_for_role, get_learning_resources],
     model=groq_model,
@@ -91,6 +108,7 @@ agent_matching = Agent(
         "- Toujours justifier avec des éléments du profil fourni\n"
         "- Être réaliste, pas flatteur\n"
         "- Réponds en français"
+        + REGLE_ANTI_HALLUCINATION
     ),
     tools=[get_all_roles_overview, get_role_details],
     model=groq_model,
@@ -120,7 +138,9 @@ agent_learning_path = Agent(
         "- Ne pas surcharger le plan\n"
         "- Toujours démarrer par les fondamentaux manquants\n"
         "- Le plan doit être immédiatement actionnable\n"
+        "- Utilise UNIQUEMENT les ressources retournées par tes outils\n"
         "- Réponds en français"
+        + REGLE_ANTI_HALLUCINATION
     ),
     tools=[get_skills_for_role, get_learning_resources],
     model=groq_model,
@@ -149,6 +169,7 @@ agent_resources = Agent(
         "- Priorité aux ressources gratuites pour les débutants\n"
         "- Justifier chaque recommandation (pourquoi cette ressource pour ce profil)\n"
         "- Réponds en français"
+        + REGLE_ANTI_HALLUCINATION
     ),
     tools=[get_learning_resources],
     model=groq_model,
@@ -185,6 +206,7 @@ agent_knowledge_map = Agent(
         "- Expliquer ce que fait un outil est OK\n"
         "- Donner la commande exacte pour l'utiliser est INTERDIT\n"
         "- Ton rôle est éducatif : expliquer les concepts, pas enseigner l'exploitation"
+        + REGLE_ANTI_HALLUCINATION
     ),
     tools=[get_mitre_techniques_for_role, get_mitre_groups_and_software, get_mitre_cve_context, get_mitre_latest_techniques],
     model=groq_model,
@@ -290,4 +312,103 @@ async def deleguer_agent_market(query: str) -> str:
     - Les salaires proposés dans les offres réelles
     Cet outil appelle l'API France Travail en temps réel — ne jamais répondre de mémoire sur ces sujets."""
     result = await Runner.run(agent_market, input=query, max_turns=5)
+    return result.final_output
+
+
+# ── SYS_09 — Agent Learning Coach (délégation) ──────────────────────────────
+
+# Mapping des métiers/domaines vers les clés RESSOURCES
+_DOMAINE_ALIAS = {
+    "pentester": "pentest", "pentest": "pentest", "pentesting": "pentest",
+    "red team": "pentest", "redteam": "pentest", "test d'intrusion": "pentest",
+    "soc analyst": "soc", "soc": "soc", "analyste soc": "soc",
+    "blue team": "soc", "blueteam": "soc", "défensif": "soc",
+    "cloud security engineer": "cloud", "cloud security": "cloud", "cloud": "cloud",
+    "sécurité cloud": "cloud", "aws": "cloud", "azure": "cloud",
+    "security engineer": "reseau", "ingénieur sécurité": "reseau",
+    "grc analyst": "grc", "grc": "grc", "gouvernance": "grc",
+    "conformité": "grc", "rssi": "grc", "iso 27001": "grc", "rgpd": "grc",
+    "cryptographie": "crypto", "crypto": "crypto", "chiffrement": "crypto",
+    "incident responder": "dfir", "dfir": "dfir", "forensics": "dfir",
+    "forensic": "dfir", "investigation numérique": "dfir",
+    "threat intelligence analyst": "threat_intel", "threat intelligence": "threat_intel",
+    "threat_intel": "threat_intel", "cti": "threat_intel",
+    "réseau": "reseau", "reseau": "reseau", "network security": "reseau",
+    "firewall": "reseau", "sécurité réseau": "reseau",
+    "appsec engineer": "devsecops", "devsecops": "devsecops", "appsec": "devsecops",
+    "sécurité applicative": "devsecops",
+    "osint": "osint", "investigation": "osint",
+}
+
+
+def _resoudre_domaines(query: str) -> list:
+    """Résout la query en clés de domaines RESSOURCES. Retourne 1+ domaines."""
+    query_lower = query.lower()
+    domaines_trouves = []
+
+    # Cherche les alias dans la query (du plus long au plus court pour éviter les faux positifs)
+    for alias in sorted(_DOMAINE_ALIAS.keys(), key=len, reverse=True):
+        if alias in query_lower:
+            cle = _DOMAINE_ALIAS[alias]
+            if cle not in domaines_trouves:
+                domaines_trouves.append(cle)
+
+    # Fallback : cherche les clés directes
+    if not domaines_trouves:
+        for cle in RESSOURCES:
+            if cle in query_lower:
+                domaines_trouves.append(cle)
+
+    return domaines_trouves
+
+
+@function_tool
+async def deleguer_agent_learning_coach(query: str) -> str:
+    """Délègue à l'Agent Learning Coach — SEULE source fiable de ressources d'apprentissage curatées.
+    Utilise OBLIGATOIREMENT ce tool pour toute question impliquant :
+    - Comment se former / apprendre / devenir [métier ou domaine cyber]
+    - Quelles ressources, vidéos, labs, certifications recommander
+    - Un plan ou parcours d'apprentissage
+    - Par où commencer dans un domaine
+    - Recommandations YouTube, podcasts, newsletters, communautés, CTF
+    Ne JAMAIS recommander de ressources de mémoire — cet outil a une base curatée de
+    qualité avec 8 catégories (YouTube, labs, certifs, blogs, podcasts, communautés,
+    CTF, newsletters) × 10 domaines × FR/EN, notées par étoiles ★ avec coût indiqué.
+    Pour les questions 'devenir X depuis zéro', cet appel est OBLIGATOIRE."""
+    import json
+
+    # Résolution automatique du domaine depuis la query
+    domaines = _resoudre_domaines(query)
+
+    # Construction du contexte HYBRIDE : données curatées injectées + liberté d'enrichir
+    if domaines:
+        ressources_injectees = {}
+        for d in domaines:
+            if d in RESSOURCES:
+                ressources_injectees[d] = RESSOURCES[d]
+        donnees_str = json.dumps(ressources_injectees, ensure_ascii=False, indent=2)
+        contexte = f"""Question de l'utilisateur : {query}
+
+═══ DONNÉES CURATÉES — TA BASE DE RÉFÉRENCE ({', '.join(domaines)}) ═══
+Ces ressources sont vérifiées et notées. Elles constituent le SOCLE de ta réponse.
+Tu DOIS les présenter dans les 8 catégories, séparées FR 🇫🇷 / EN 🇬🇧 avec étoiles ★ et coûts.
+
+{donnees_str}
+
+═══ TES LIBERTÉS ═══
+- Tu peux ADAPTER la sélection au niveau de l'utilisateur (débutant → focus gratuit)
+- Tu peux HIÉRARCHISER (mettre en avant les ★★★★★ pour un débutant)
+- Tu peux COMPLÉTER avec des conseils personnalisés
+- Tu peux ENRICHIR avec des précisions utiles sur les ressources listées
+- Mais ta base curatée ci-dessus reste le SOCLE : ne l'ignore pas, ne la remplace pas
+- Termine par le parcours guidé (clé "parcours" dans les données)"""
+    else:
+        # Pas de domaine détecté — laisser l'agent chercher avec ses outils
+        contexte = f"""Question de l'utilisateur : {query}
+
+Domaines disponibles dans ta base : {list(RESSOURCES.keys())}
+Utilise tes outils get_ressources_domaine et list_domaines_disponibles pour trouver
+les ressources pertinentes. Présente les 8 catégories FR/EN avec étoiles."""
+
+    result = await Runner.run(agent_learning_coach, input=contexte, max_turns=5)
     return result.final_output
