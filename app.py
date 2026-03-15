@@ -276,6 +276,8 @@ if user_input:
                     or "Access denied" in error_str
                 )
 
+                st.error(f"DEBUG: {error_type}: {error_str[:200]}")
+
                 if is_rate_limit and HAS_FALLBACK and PROVIDER == "groq":
                     st.session_state.active_provider = "openrouter"
                     st.warning(
