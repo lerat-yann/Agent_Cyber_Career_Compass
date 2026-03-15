@@ -19,7 +19,11 @@ load_dotenv()
 # ── Récupération des clés (compatible .env + Streamlit secrets) ──────────────
 try:
     import streamlit as st
-    _secrets_get = lambda key: st.secrets.get(key, None)
+    def _secrets_get(key):
+        try:
+            return st.secrets.get(key, None)
+        except Exception:
+            return None
 except Exception:
     _secrets_get = lambda key: None
 
@@ -28,7 +32,7 @@ OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY") or _secrets_get("OPENR
 
 # ── Variable d'environnement pour forcer un provider ─────────────────────────
 # Utilisée par app.py pour basculer sur OpenRouter après un 429 Groq
-FORCE_PROVIDER = os.environ.get("FORCE_PROVIDER", "").lower()
+FORCE_PROVIDER = (os.environ.get("FORCE_PROVIDER") or _secrets_get("FORCE_PROVIDER") or "").lower()
 
 # ── Sélection du provider ────────────────────────────────────────────────────
 if FORCE_PROVIDER == "openrouter" and OPENROUTER_API_KEY:
