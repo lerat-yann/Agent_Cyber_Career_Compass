@@ -1,4 +1,4 @@
-openai-agents
+openai-agents[mcp]
 python-dotenv
 requests
 streamlit

@@ -1,0 +1,144 @@
+"""
+Agents MCP du Cyber Career Compass — V7.
+
+Intègre Gmail et Google Calendar via Composio MCP (SSE distant).
+Deux fonctions exposées comme tools pour le app.py :
+  - envoyer_par_mail(destinataire, contenu) → envoie le plan par Gmail
+  - planifier_calendrier(contenu) → crée les événements dans Google Calendar
+
+Architecture : agents-as-tools (même pattern que cyber_agents.py)
+Les serveurs MCP sont connectés via MCPServerSse (Composio URLs).
+"""
+
+import os
+import asyncio
+from agents import Agent, Runner, function_tool
+from agents.mcp import MCPServerSse
+from config import groq_model, register_agent
+
+# ── URLs MCP depuis les secrets ──────────────────────────────────────────────
+# Ces URLs sont stockées dans les secrets Streamlit (ou .env)
+
+try:
+    import streamlit as st
+    def _secrets_get(key):
+        try:
+            return st.secrets.get(key, None)
+        except Exception:
+            return None
+except Exception:
+    _secrets_get = lambda key: None
+
+COMPOSIO_MCP_GMAIL_URL = os.environ.get("COMPOSIO_MCP_GMAIL_URL") or _secrets_get("COMPOSIO_MCP_GMAIL_URL")
+COMPOSIO_MCP_CALENDAR_URL = os.environ.get("COMPOSIO_MCP_CALENDAR_URL") or _secrets_get("COMPOSIO_MCP_CALENDAR_URL")
+
+MCP_GMAIL_AVAILABLE = bool(COMPOSIO_MCP_GMAIL_URL)
+MCP_CALENDAR_AVAILABLE = bool(COMPOSIO_MCP_CALENDAR_URL)
+
+print(f"[MCP] Gmail: {'✅ configuré' if MCP_GMAIL_AVAILABLE else '❌ non configuré'}")
+print(f"[MCP] Calendar: {'✅ configuré' if MCP_CALENDAR_AVAILABLE else '❌ non configuré'}")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# FONCTION : Envoyer un plan par mail via Gmail MCP
+# ══════════════════════════════════════════════════════════════════════════════
+
+async def _envoyer_mail_mcp(destinataire: str, sujet: str, contenu: str) -> str:
+    """Connecte le serveur MCP Gmail, crée un agent, envoie le mail."""
+    if not MCP_GMAIL_AVAILABLE:
+        return "❌ Gmail MCP non configuré. Ajoutez COMPOSIO_MCP_GMAIL_URL dans les secrets."
+
+    try:
+        async with MCPServerSse(
+            name="Gmail Composio",
+            params={"url": COMPOSIO_MCP_GMAIL_URL},
+            cache_tools_list=True,
+        ) as gmail_server:
+
+            agent_gmail = Agent(
+                name="Agent Gmail MCP",
+                instructions=(
+                    "Tu es un agent spécialisé dans l'envoi d'emails via Gmail.\n"
+                    "Quand on te demande d'envoyer un mail, utilise les outils Gmail disponibles.\n"
+                    "Envoie le mail tel quel, sans modifier le contenu.\n"
+                    "Confirme l'envoi avec l'adresse du destinataire.\n"
+                    "Réponds en français."
+                ),
+                mcp_servers=[gmail_server],
+                model=groq_model,
+            )
+
+            task = (
+                f"Envoie un email à {destinataire} "
+                f"avec le sujet '{sujet}' "
+                f"et le contenu suivant :\n\n{contenu}"
+            )
+
+            result = await Runner.run(agent_gmail, input=task, max_turns=5)
+            return result.final_output
+
+    except Exception as e:
+        return f"❌ Erreur envoi mail : {type(e).__name__}: {e}"
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# FONCTION : Planifier un parcours dans Google Calendar via MCP
+# ══════════════════════════════════════════════════════════════════════════════
+
+async def _planifier_calendrier_mcp(contenu_plan: str) -> str:
+    """Connecte le serveur MCP Calendar, crée un agent, planifie les événements."""
+    if not MCP_CALENDAR_AVAILABLE:
+        return "❌ Google Calendar MCP non configuré. Ajoutez COMPOSIO_MCP_CALENDAR_URL dans les secrets."
+
+    try:
+        async with MCPServerSse(
+            name="Google Calendar Composio",
+            params={"url": COMPOSIO_MCP_CALENDAR_URL},
+            cache_tools_list=True,
+        ) as calendar_server:
+
+            agent_calendar = Agent(
+                name="Agent Google Calendar MCP",
+                instructions=(
+                    "Tu es un agent spécialisé dans la planification Google Calendar.\n"
+                    "À partir d'un plan d'apprentissage cybersécurité, crée des événements "
+                    "dans Google Calendar.\n\n"
+                    "RÈGLES :\n"
+                    "- Crée UN événement par phase/étape du parcours\n"
+                    "- Chaque événement dure une journée entière (all-day event)\n"
+                    "- Espace les événements selon le rythme indiqué dans le plan\n"
+                    "- Le premier événement commence dans 7 jours à partir d'aujourd'hui\n"
+                    "- Titre de l'événement : 'Cyber Compass — [nom de l'étape]'\n"
+                    "- Description : détails de l'étape + ressources mentionnées\n"
+                    "- Confirme la création de chaque événement\n"
+                    "- Réponds en français"
+                ),
+                mcp_servers=[calendar_server],
+                model=groq_model,
+            )
+
+            task = (
+                "À partir du plan d'apprentissage suivant, crée des événements "
+                "dans Google Calendar pour chaque phase du parcours :\n\n"
+                f"{contenu_plan}"
+            )
+
+            result = await Runner.run(agent_calendar, input=task, max_turns=10)
+            return result.final_output
+
+    except Exception as e:
+        return f"❌ Erreur planification calendrier : {type(e).__name__}: {e}"
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# FONCTIONS SYNCHRONES pour app.py (wrappers asyncio)
+# ══════════════════════════════════════════════════════════════════════════════
+
+def envoyer_par_mail(destinataire: str, sujet: str, contenu: str) -> str:
+    """Wrapper synchrone pour l'envoi de mail MCP. Utilisé par app.py."""
+    return asyncio.run(_envoyer_mail_mcp(destinataire, sujet, contenu))
+
+
+def planifier_calendrier(contenu_plan: str) -> str:
+    """Wrapper synchrone pour la planification Calendar MCP. Utilisé par app.py."""
+    return asyncio.run(_planifier_calendrier_mcp(contenu_plan))
