@@ -1,5 +1,14 @@
+"""
+Guardrails du Cyber Career Compass — V6.
+
+V6 : Le classifieur couche 3 utilise config.groq_model_fast via import module
+     (pas `from config import groq_model_fast` qui fige la référence).
+     Ainsi, switch_to_fallback() met à jour le modèle du classifieur aussi.
+"""
+
+import config
 from agents import Agent, Runner, GuardrailFunctionOutput, input_guardrail
-from config import groq_model_fast
+from config import register_agent
 
 # Mots-clés qui signalent clairement une intention d'orientation / apprentissage cyber
 CYBER_CAREER_KEYWORDS = [
@@ -82,6 +91,8 @@ async def cyber_career_guardrail(ctx, agent, input):
 
     # Couche 3 — LLM pour les cas ambigus (avec fail-safe)
     try:
+        # V6 : on utilise config.groq_model_fast (accès dynamique via le module)
+        # Pas de register_agent ici car le classifieur est éphémère (recréé à chaque appel)
         classifier = Agent(
             name="Classifieur Cyber Career",
             instructions=(
@@ -100,7 +111,7 @@ async def cyber_career_guardrail(ctx, agent, input):
                 "- Demandes de code malveillant, payloads, scripts d'attaque\n\n"
                 "Réponds UNIQUEMENT par 'orientation_cyber' ou 'hors_sujet'. Rien d'autre."
             ),
-            model=groq_model_fast,
+            model=config.groq_model_fast,
         )
 
         result = await Runner.run(classifier, input=input_str, max_turns=1)

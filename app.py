@@ -1,17 +1,18 @@
 """
-Cyber Career Compass — Interface Streamlit V5
+Cyber Career Compass — Interface Streamlit V6
 Lancement : streamlit run app.py
 
-V5 : Système de profilage (sidebar) pour personnaliser les recommandations.
-Fallback automatique : Groq (kimi-k2) → OpenRouter (free) en cas de rate-limit.
+V6 : Switch à chaud Groq → OpenRouter via config.switch_to_fallback().
+     Plus de importlib.reload() — les agents sont mutés in-place via le registre.
+     Fallback automatique : Groq (kimi-k2) → OpenRouter (free) en cas de rate-limit.
 """
 
 import asyncio
-import os
-import importlib
 import streamlit as st
+import config
 from agents import Runner
 from agents.exceptions import InputGuardrailTripwireTriggered
+from manager import manager
 
 # ── Configuration de la page ──
 st.set_page_config(
@@ -28,7 +29,7 @@ st.caption(
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# SIDEBAR — Profil utilisateur (V5)
+# SIDEBAR — Profil utilisateur
 # ══════════════════════════════════════════════════════════════════════════════
 
 with st.sidebar:
@@ -133,37 +134,11 @@ with st.sidebar:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# CHARGEMENT DU MANAGER
+# AFFICHAGE PROVIDER ACTIF
 # ══════════════════════════════════════════════════════════════════════════════
 
-@st.cache_resource
-def load_manager(provider_override=None):
-    """Charge le manager avec le provider spécifié."""
-    if provider_override:
-        os.environ["FORCE_PROVIDER"] = provider_override
-    elif "FORCE_PROVIDER" in os.environ:
-        del os.environ["FORCE_PROVIDER"]
-
-    import config
-    importlib.reload(config)
-    import agent_learning_coach
-    importlib.reload(agent_learning_coach)
-    import cyber_agents
-    importlib.reload(cyber_agents)
-    import manager as manager_module
-    importlib.reload(manager_module)
-
-    return manager_module.manager
-
-
-if "active_provider" not in st.session_state:
-    st.session_state.active_provider = None
-
-manager = load_manager(st.session_state.active_provider)
-
-from config import PROVIDER, HAS_FALLBACK
-provider_label = "🟢 Groq (kimi-k2)" if PROVIDER == "groq" else "🟡 OpenRouter (free)"
-fallback_label = " · Fallback disponible" if HAS_FALLBACK else ""
+provider_label = "🟢 Groq (kimi-k2)" if config.PROVIDER == "groq" else "🟡 OpenRouter (free)"
+fallback_label = " · Fallback disponible" if config.HAS_FALLBACK else ""
 st.caption(f"Provider : {provider_label}{fallback_label}")
 
 
@@ -276,14 +251,21 @@ if user_input:
                     or "Access denied" in error_str
                 )
 
-                if is_rate_limit and HAS_FALLBACK and PROVIDER == "groq":
-                    st.session_state.active_provider = "openrouter"
-                    st.warning(
-                        "⚡ Limite Groq atteinte — basculement sur OpenRouter. "
-                        "Relancez votre question."
-                    )
-                    load_manager.clear()
-                    st.rerun()
+                if is_rate_limit and config.HAS_FALLBACK and config.PROVIDER == "groq":
+                    # V6 : switch à chaud — pas de reload, mutation in-place
+                    switched = config.switch_to_fallback()
+                    if switched:
+                        st.warning(
+                            "⚡ Limite Groq atteinte — basculement sur OpenRouter. "
+                            "Relancez votre question."
+                        )
+                        st.rerun()
+                    else:
+                        response = (
+                            "⚠️ **Limite de requêtes atteinte**\n\n"
+                            "Impossible de basculer sur le provider de secours. "
+                            "Réessayez dans quelques minutes."
+                        )
                 elif is_rate_limit:
                     response = (
                         "⚠️ **Limite de requêtes atteinte**\n\n"
@@ -302,10 +284,9 @@ if user_input:
 # ══════════════════════════════════════════════════════════════════════════════
 
 with st.sidebar:
-    if PROVIDER == "openrouter" and st.session_state.active_provider == "openrouter":
+    if config.PROVIDER == "openrouter" and config.HAS_FALLBACK:
         if st.button("🔄 Réessayer avec Groq (kimi-k2)", use_container_width=True):
-            st.session_state.active_provider = None
-            load_manager.clear()
+            config.switch_to_groq()
             st.rerun()
 
 # ── Footer ──

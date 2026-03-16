@@ -1,13 +1,12 @@
 # =============================================================================
-# AGENT LEARNING COACH — Cyber Career Compass (V4 — URLs ajoutées)
+# AGENT LEARNING COACH — Cyber Career Compass (V6 — register_agent ajouté)
 # Fichier : agent_learning_coach.py
 # Rôle    : Base de ressources curatées avec URLs, notation, coûts.
 #           10 domaines × 8 catégories × FR + EN.
-#           L'agent est conservé pour les cas où le manager en a besoin,
-#           mais get_plan_complet() dans cyber_agents.py est la voie principale.
+#           V6 : l'agent est enregistré via register_agent() pour le switch à chaud.
 # =============================================================================
 
-from config import groq_model
+from config import groq_model, register_agent
 
 # =============================================================================
 # BASE DE RESSOURCES CURATÉES — 10 domaines × 8 catégories × FR + EN
@@ -1157,9 +1156,9 @@ TES LIMITES :
 # CRÉATION DE L'AGENT
 # =============================================================================
 
-agent_learning_coach = Agent(
+agent_learning_coach = register_agent(Agent(
     name="Agent Learning Coach",
     instructions=LEARNING_COACH_INSTRUCTIONS,
     tools=[get_ressources_domaine, list_domaines_disponibles],
     model=groq_model,
-)
+))

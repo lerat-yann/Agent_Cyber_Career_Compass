@@ -1,5 +1,5 @@
 """
-Agents spécialisés du Cyber Career Compass — V4 Simplifiée.
+Agents spécialisés du Cyber Career Compass — V6.
 
 Architecture : 4 tools au lieu de 8
   1. get_plan_complet(metier)  — assemblage Python déterministe (NICE + skills + ressources)
@@ -9,11 +9,13 @@ Architecture : 4 tools au lieu de 8
 
 Pattern : agents-as-tools pour market, matching, knowledge_map
            function_tool direct pour get_plan_complet (pas d'agent, Python pur)
+
+V6 : tous les agents sont enregistrés via register_agent() pour le switch à chaud.
 """
 
 import json
 from agents import Agent, Runner, function_tool
-from config import groq_model
+from config import groq_model, register_agent
 from agent_learning_coach import RESSOURCES
 from tools import (
     NICE_ROLES,
@@ -204,7 +206,7 @@ def get_plan_complet(metier: str) -> str:
 
 # ── Agent Marché Emploi ──────────────────────────────────────────────────────
 
-agent_market = Agent(
+agent_market = register_agent(Agent(
     name="Agent Marché Emploi Cyber",
     instructions=(
         "Tu es un expert du marché de l'emploi en cybersécurité en France.\n\n"
@@ -236,12 +238,12 @@ agent_market = Agent(
     ),
     tools=[get_job_market_data],
     model=groq_model,
-)
+))
 
 
 # ── Agent Matching ──────────────────────────────────────────────────────────
 
-agent_matching = Agent(
+agent_matching = register_agent(Agent(
     name="Agent Matching Profil",
     instructions=(
         "Tu es un conseiller carrière spécialisé dans l'orientation vers les métiers de la cybersécurité.\n\n"
@@ -270,12 +272,12 @@ agent_matching = Agent(
     ),
     tools=[get_all_roles_overview, get_role_details],
     model=groq_model,
-)
+))
 
 
 # ── Agent Knowledge Map ─────────────────────────────────────────────────────
 
-agent_knowledge_map = Agent(
+agent_knowledge_map = register_agent(Agent(
     name="Agent Cartographie des Connaissances",
     instructions=(
         "Tu es un vulgarisateur technique spécialisé dans la cybersécurité appliquée.\n\n"
@@ -301,7 +303,7 @@ agent_knowledge_map = Agent(
     tools=[get_mitre_techniques_for_role, get_mitre_groups_and_software,
            get_mitre_cve_context, get_mitre_latest_techniques],
     model=groq_model,
-)
+))
 
 
 # ══════════════════════════════════════════════════════════════════════════════

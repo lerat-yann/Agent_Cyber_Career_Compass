@@ -1,7 +1,9 @@
 """
-Manager V4 — Orchestrateur simplifié du Cyber Career Compass.
+Manager V6 — Orchestrateur du Cyber Career Compass.
 
-4 tools au lieu de 8 :
+V6 : manager enregistré via register_agent() pour le switch à chaud Groq↔OpenRouter.
+
+4 tools :
   1. get_plan_complet     → données NICE + compétences + ressources curatées (Python pur)
   2. deleguer_agent_market → données emploi live (API France Travail)
   3. deleguer_agent_matching → orientation profil → métiers
@@ -9,7 +11,7 @@ Manager V4 — Orchestrateur simplifié du Cyber Career Compass.
 """
 
 from agents import Agent
-from config import groq_model
+from config import groq_model, register_agent
 from cyber_agents import (
     get_plan_complet,
     deleguer_agent_market,
@@ -18,7 +20,7 @@ from cyber_agents import (
 )
 from guardrails import cyber_career_guardrail
 
-manager = Agent(
+manager = register_agent(Agent(
     name="Cyber Career Compass — Orchestrateur",
     instructions=(
         "Tu es l'orchestrateur du Cyber Career Compass.\n\n"
@@ -98,4 +100,4 @@ manager = Agent(
     ],
     input_guardrails=[cyber_career_guardrail],
     model=groq_model,
-)
+))

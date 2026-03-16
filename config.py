@@ -1,13 +1,15 @@
 """
-Configuration du Cyber Career Compass.
+Configuration du Cyber Career Compass — V6.
 Double provider : Groq (prioritaire, meilleur tool-calling) + OpenRouter (fallback).
+
+V6 : Registre d'agents + switch à chaud (plus de importlib.reload).
+  - register_agent(agent) : enregistre un agent dans le registre
+  - switch_to_fallback()  : bascule TOUS les agents sur OpenRouter
+  - switch_to_groq()      : rebascule sur Groq
 
 Les deux clés peuvent coexister dans .env :
   GROQ_API_KEY=gsk_...
   OPENROUTER_API_KEY=sk-or-...
-
-Groq est utilisé en premier (kimi-k2 = meilleur tool-calling gratuit).
-Si Groq rate-limit (429), app.py relance automatiquement avec OpenRouter.
 """
 
 import os
@@ -30,18 +32,34 @@ except Exception:
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY") or _secrets_get("GROQ_API_KEY")
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY") or _secrets_get("OPENROUTER_API_KEY")
 
-# ── Variable d'environnement pour forcer un provider ─────────────────────────
-# Utilisée par app.py pour basculer sur OpenRouter après un 429 Groq
-FORCE_PROVIDER = (os.environ.get("FORCE_PROVIDER") or _secrets_get("FORCE_PROVIDER") or "").lower()
+# ── Désactiver le tracing ────────────────────────────────────────────────────
+set_tracing_disabled(True)
 
-# ── Sélection du provider ────────────────────────────────────────────────────
-if FORCE_PROVIDER == "openrouter" and OPENROUTER_API_KEY:
-    PROVIDER = "openrouter"
-elif GROQ_API_KEY and FORCE_PROVIDER != "openrouter":
-    PROVIDER = "groq"
-elif OPENROUTER_API_KEY:
-    PROVIDER = "openrouter"
-else:
+# ══════════════════════════════════════════════════════════════════════════════
+# CLIENTS — les deux sont créés au démarrage (si les clés existent)
+# ══════════════════════════════════════════════════════════════════════════════
+
+_groq_client = None
+_openrouter_client = None
+
+if GROQ_API_KEY:
+    _groq_client = AsyncOpenAI(
+        base_url="https://api.groq.com/openai/v1",
+        api_key=GROQ_API_KEY,
+    )
+
+if OPENROUTER_API_KEY:
+    _openrouter_client = AsyncOpenAI(
+        base_url="https://openrouter.ai/api/v1",
+        api_key=OPENROUTER_API_KEY,
+        default_headers={
+            "HTTP-Referer": "https://cyber-career-compass.streamlit.app",
+            "X-Title": "Cyber Career Compass",
+        },
+    )
+
+# Vérifier qu'au moins un provider est disponible
+if not _groq_client and not _openrouter_client:
     raise ValueError(
         "Aucune clé API trouvée.\n"
         "Ajoutez dans votre .env :\n"
@@ -50,48 +68,106 @@ else:
         "Idéalement, mettez LES DEUX pour le fallback automatique."
     )
 
-# ── Configuration selon le provider ──────────────────────────────────────────
-if PROVIDER == "groq":
-    API_KEY = GROQ_API_KEY
-    BASE_URL = "https://api.groq.com/openai/v1"
-    MODEL_MAIN = "moonshotai/kimi-k2-instruct"
-    MODEL_FAST = "llama-3.1-8b-instant"
-    # Indique si un fallback est possible
-    HAS_FALLBACK = bool(OPENROUTER_API_KEY)
-else:
-    API_KEY = OPENROUTER_API_KEY
-    BASE_URL = "https://openrouter.ai/api/v1"
-    MODEL_MAIN = "openrouter/free"
-    MODEL_FAST = "openrouter/free"
-    HAS_FALLBACK = False  # Déjà sur le fallback
+# ══════════════════════════════════════════════════════════════════════════════
+# MODÈLES — un jeu par provider
+# ══════════════════════════════════════════════════════════════════════════════
 
-print(f"[Config] Provider : {PROVIDER} | Modèle : {MODEL_MAIN}"
+_groq_model_main = None
+_groq_model_fast = None
+_openrouter_model_main = None
+_openrouter_model_fast = None
+
+if _groq_client:
+    _groq_model_main = OpenAIChatCompletionsModel(
+        model="moonshotai/kimi-k2-instruct",
+        openai_client=_groq_client,
+    )
+    _groq_model_fast = OpenAIChatCompletionsModel(
+        model="llama-3.1-8b-instant",
+        openai_client=_groq_client,
+    )
+
+if _openrouter_client:
+    _openrouter_model_main = OpenAIChatCompletionsModel(
+        model="openrouter/free",
+        openai_client=_openrouter_client,
+    )
+    _openrouter_model_fast = OpenAIChatCompletionsModel(
+        model="openrouter/free",
+        openai_client=_openrouter_client,
+    )
+
+# ══════════════════════════════════════════════════════════════════════════════
+# PROVIDER ACTIF + MODÈLES EXPORTÉS
+# ══════════════════════════════════════════════════════════════════════════════
+
+# Provider initial : Groq si disponible, sinon OpenRouter
+if _groq_client:
+    PROVIDER = "groq"
+    groq_model = _groq_model_main
+    groq_model_fast = _groq_model_fast
+else:
+    PROVIDER = "openrouter"
+    groq_model = _openrouter_model_main
+    groq_model_fast = _openrouter_model_fast
+
+HAS_FALLBACK = bool(_groq_client and _openrouter_client)
+
+print(f"[Config V6] Provider : {PROVIDER} | Modèle : {groq_model.model}"
       f"{' (fallback OpenRouter disponible)' if HAS_FALLBACK else ''}")
 
-# ── Désactiver le tracing ────────────────────────────────────────────────────
-set_tracing_disabled(True)
+# ══════════════════════════════════════════════════════════════════════════════
+# REGISTRE D'AGENTS — switch à chaud sans reload
+# ══════════════════════════════════════════════════════════════════════════════
 
-# ── Client API ───────────────────────────────────────────────────────────────
-_extra_headers = {}
-if PROVIDER == "openrouter":
-    _extra_headers = {
-        "HTTP-Referer": "https://cyber-career-compass.streamlit.app",
-        "X-Title": "Cyber Career Compass",
-    }
+_registered_agents = []
 
-_client = AsyncOpenAI(
-    base_url=BASE_URL,
-    api_key=API_KEY,
-    default_headers=_extra_headers,
-)
 
-# ── Modèles exportés (noms inchangés pour compatibilité) ────────────────────
-groq_model = OpenAIChatCompletionsModel(
-    model=MODEL_MAIN,
-    openai_client=_client,
-)
+def register_agent(agent):
+    """Enregistre un agent pour que switch_to_fallback/switch_to_groq puisse
+    mettre à jour son .model automatiquement.
+    Retourne l'agent (permet d'écrire : agent = register_agent(Agent(...)))."""
+    _registered_agents.append(agent)
+    return agent
 
-groq_model_fast = OpenAIChatCompletionsModel(
-    model=MODEL_FAST,
-    openai_client=_client,
-)
+
+def switch_to_fallback():
+    """Bascule TOUS les agents enregistrés sur OpenRouter.
+    Retourne True si le switch a réussi, False si pas de fallback disponible."""
+    global PROVIDER, groq_model, groq_model_fast
+
+    if not _openrouter_client:
+        print("[Config V6] Pas de fallback OpenRouter disponible")
+        return False
+
+    PROVIDER = "openrouter"
+    groq_model = _openrouter_model_main
+    groq_model_fast = _openrouter_model_fast
+
+    for agent in _registered_agents:
+        # Les agents "main" utilisent groq_model, le classifieur utilise groq_model_fast
+        # On bascule tout sur OpenRouter main par défaut
+        agent.model = _openrouter_model_main
+
+    print(f"[Config V6] Switch → OpenRouter | {len(_registered_agents)} agents mis à jour")
+    return True
+
+
+def switch_to_groq():
+    """Rebascule TOUS les agents enregistrés sur Groq.
+    Retourne True si le switch a réussi, False si Groq non disponible."""
+    global PROVIDER, groq_model, groq_model_fast
+
+    if not _groq_client:
+        print("[Config V6] Pas de client Groq disponible")
+        return False
+
+    PROVIDER = "groq"
+    groq_model = _groq_model_main
+    groq_model_fast = _groq_model_fast
+
+    for agent in _registered_agents:
+        agent.model = _groq_model_main
+
+    print(f"[Config V6] Switch → Groq | {len(_registered_agents)} agents mis à jour")
+    return True
