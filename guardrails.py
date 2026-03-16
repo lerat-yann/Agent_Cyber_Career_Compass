@@ -31,6 +31,13 @@ OFFENSIVE_KEYWORDS = [
     "keylogger", "botnet", "ddos", "deface", "injection sql sur",
     "bypass", "crack", "bruteforce", "hack un site", "pirater",
     "comment accéder", "voler des données", "exfiltrer",
+    # V5 — ajouts pour couvrir les demandes d'attaques spécifiques
+    "attaque xss", "attaque sql", "attaque csrf", "attaque rce",
+    "faire une xss", "faire une injection", "faire un ddos",
+    "code pour attaquer", "code pour hacker", "code pour pirater",
+    "script d'attaque", "payload pour", "exploit pour",
+    "donne moi le code", "donne-moi le code",
+    "comment hacker", "comment pirater", "comment cracker",
 ]
 
 
@@ -53,7 +60,7 @@ async def cyber_career_guardrail(ctx, agent, input):
 
     Couche 1 : mots-clés offensifs → blocage immédiat.
     Couche 2 : mots-clés orientation/cyber → passage immédiat.
-    Couche 3 : LLM classifieur pour les cas ambigus.
+    Couche 3 : LLM classifieur pour les cas ambigus (fail-safe : blocage si erreur).
 
     Conforme à SYS_07_GUARDRAIL.md
     """
@@ -73,32 +80,50 @@ async def cyber_career_guardrail(ctx, agent, input):
             tripwire_triggered=False,
         )
 
-    # Couche 3 — LLM pour les cas ambigus
-    classifier = Agent(
-        name="Classifieur Cyber Career",
-        instructions=(
-            "Tu détermines si une requête concerne l'orientation professionnelle en cybersécurité, "
-            "l'apprentissage des métiers cyber, la compréhension des rôles, compétences ou ressources "
-            "pédagogiques en sécurité informatique.\n\n"
-            "AUTORISÉ (réponds 'orientation_cyber') :\n"
-            "- Questions sur les métiers, compétences, formations, certifications\n"
-            "- Questions sur les concepts cyber (MITRE ATT&CK, CVE, CVSS, APT, OWASP...)\n"
-            "- Demander le contexte ou l'explication d'un CVE spécifique (ex: CVE-2024-3400)\n"
-            "- Questions générales sur la sécurité, le réseau, ou le code dans un contexte d'apprentissage\n"
-            "- Questions sur le marché de l'emploi en cybersécurité\n\n"
-            "REFUSÉ (réponds 'hors_sujet') :\n"
-            "- Demande d'exploitation réelle d'un système ou d'un site\n"
-            "- Questions totalement hors domaine cyber (cuisine, sport, etc.)\n\n"
-            "Réponds UNIQUEMENT par 'orientation_cyber' ou 'hors_sujet'. Rien d'autre."
-        ),
-        model=groq_model_fast,
-    )
+    # Couche 3 — LLM pour les cas ambigus (avec fail-safe)
+    try:
+        classifier = Agent(
+            name="Classifieur Cyber Career",
+            instructions=(
+                "Tu détermines si une requête concerne l'orientation professionnelle en cybersécurité, "
+                "l'apprentissage des métiers cyber, la compréhension des rôles, compétences ou ressources "
+                "pédagogiques en sécurité informatique.\n\n"
+                "AUTORISÉ (réponds 'orientation_cyber') :\n"
+                "- Questions sur les métiers, compétences, formations, certifications\n"
+                "- Questions sur les concepts cyber (MITRE ATT&CK, CVE, CVSS, APT, OWASP...)\n"
+                "- Demander le contexte ou l'explication d'un CVE spécifique (ex: CVE-2024-3400)\n"
+                "- Questions générales sur la sécurité, le réseau, ou le code dans un contexte d'apprentissage\n"
+                "- Questions sur le marché de l'emploi en cybersécurité\n\n"
+                "REFUSÉ (réponds 'hors_sujet') :\n"
+                "- Demande d'exploitation réelle d'un système ou d'un site\n"
+                "- Questions totalement hors domaine cyber (cuisine, sport, etc.)\n"
+                "- Demandes de code malveillant, payloads, scripts d'attaque\n\n"
+                "Réponds UNIQUEMENT par 'orientation_cyber' ou 'hors_sujet'. Rien d'autre."
+            ),
+            model=groq_model_fast,
+        )
 
-    result = await Runner.run(classifier, input=input_str, max_turns=1)
-    classification = result.final_output.strip().lower()
-    is_cyber_career = "orientation_cyber" in classification
+        result = await Runner.run(classifier, input=input_str, max_turns=1)
+        classification = result.final_output.strip().lower()
 
-    return GuardrailFunctionOutput(
-        output_info={"classification": classification, "layer": 3},
-        tripwire_triggered=not is_cyber_career,
-    )
+        # Vérification stricte : la réponse doit contenir exactement un des deux termes
+        if "orientation_cyber" in classification:
+            is_cyber_career = True
+        elif "hors_sujet" in classification:
+            is_cyber_career = False
+        else:
+            # Réponse inattendue du LLM → blocage par sécurité
+            is_cyber_career = False
+
+        return GuardrailFunctionOutput(
+            output_info={"classification": classification, "layer": 3},
+            tripwire_triggered=not is_cyber_career,
+        )
+
+    except Exception:
+        # Si le LLM classifieur échoue (rate limit, timeout, etc.)
+        # → Blocage par sécurité (fail-safe)
+        return GuardrailFunctionOutput(
+            output_info={"classification": "erreur_llm_failsafe", "layer": 3},
+            tripwire_triggered=True,
+        )
