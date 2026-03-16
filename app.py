@@ -284,55 +284,59 @@ if user_input:
         st.markdown(response)
         st.session_state.messages.append({"role": "assistant", "content": response})
 
-        # ── Boutons MCP : Mail + Calendar (V7) ──
-        # Affichés uniquement si la réponse n'est pas une erreur
+        # Sauvegarder la dernière réponse pour les boutons MCP
         if not response.startswith("⚠️") and not response.startswith("🔒"):
             st.session_state.last_response = response
 
-    # Boutons MCP en dehors du spinner (pour qu'ils restent cliquables)
-    if "last_response" in st.session_state and st.session_state.last_response:
-        mcp_cols = st.columns(2)
 
-        with mcp_cols[0]:
-            if MCP_GMAIL_AVAILABLE:
-                if st.button("📧 Envoyer par mail", key="btn_mail", use_container_width=True):
-                    st.session_state.show_mail_form = True
+# ══════════════════════════════════════════════════════════════════════════════
+# BOUTONS MCP : Mail + Calendar (V7)
+# Affichés EN DEHORS du bloc if user_input pour persister après rerun
+# ══════════════════════════════════════════════════════════════════════════════
 
-        with mcp_cols[1]:
-            if MCP_CALENDAR_AVAILABLE:
-                if st.button("📅 Planifier dans Calendar", key="btn_calendar", use_container_width=True):
-                    st.session_state.show_calendar_confirm = True
+if st.session_state.get("last_response"):
+    mcp_cols = st.columns(2)
 
-        # ── Formulaire mail ──
-        if st.session_state.get("show_mail_form"):
-            with st.form("mail_form"):
-                email_dest = st.text_input("Adresse email du destinataire")
-                submitted = st.form_submit_button("Envoyer")
-                if submitted and email_dest:
-                    with st.spinner("📧 Envoi en cours via Gmail MCP..."):
-                        result_mail = envoyer_par_mail(
-                            destinataire=email_dest,
-                            sujet="Votre plan Cyber Career Compass",
-                            contenu=st.session_state.last_response,
-                        )
-                    st.markdown(result_mail)
-                    st.session_state.show_mail_form = False
+    with mcp_cols[0]:
+        if MCP_GMAIL_AVAILABLE:
+            if st.button("📧 Envoyer par mail", key="btn_mail", use_container_width=True):
+                st.session_state.show_mail_form = True
 
-        # ── Confirmation Calendar ──
-        if st.session_state.get("show_calendar_confirm"):
-            st.info("📅 Cela va créer des événements dans votre Google Calendar pour chaque étape du parcours.")
-            col_ok, col_cancel = st.columns(2)
-            with col_ok:
-                if st.button("✅ Confirmer", key="cal_confirm"):
-                    with st.spinner("📅 Planification en cours via Google Calendar MCP..."):
-                        result_cal = planifier_calendrier(
-                            contenu_plan=st.session_state.last_response,
-                        )
-                    st.markdown(result_cal)
-                    st.session_state.show_calendar_confirm = False
-            with col_cancel:
-                if st.button("❌ Annuler", key="cal_cancel"):
-                    st.session_state.show_calendar_confirm = False
+    with mcp_cols[1]:
+        if MCP_CALENDAR_AVAILABLE:
+            if st.button("📅 Planifier dans Calendar", key="btn_calendar", use_container_width=True):
+                st.session_state.show_calendar_confirm = True
+
+    # ── Formulaire mail ──
+    if st.session_state.get("show_mail_form"):
+        with st.form("mail_form"):
+            email_dest = st.text_input("Adresse email du destinataire")
+            submitted = st.form_submit_button("Envoyer")
+            if submitted and email_dest:
+                with st.spinner("📧 Envoi en cours via Gmail MCP..."):
+                    result_mail = envoyer_par_mail(
+                        destinataire=email_dest,
+                        sujet="Votre plan Cyber Career Compass",
+                        contenu=st.session_state.last_response,
+                    )
+                st.markdown(result_mail)
+                st.session_state.show_mail_form = False
+
+    # ── Confirmation Calendar ──
+    if st.session_state.get("show_calendar_confirm"):
+        st.info("📅 Cela va créer des événements dans votre Google Calendar pour chaque étape du parcours.")
+        col_ok, col_cancel = st.columns(2)
+        with col_ok:
+            if st.button("✅ Confirmer", key="cal_confirm"):
+                with st.spinner("📅 Planification en cours via Google Calendar MCP..."):
+                    result_cal = planifier_calendrier(
+                        contenu_plan=st.session_state.last_response,
+                    )
+                st.markdown(result_cal)
+                st.session_state.show_calendar_confirm = False
+        with col_cancel:
+            if st.button("❌ Annuler", key="cal_cancel"):
+                st.session_state.show_calendar_confirm = False
 
 
 # ══════════════════════════════════════════════════════════════════════════════
