@@ -1,23 +1,22 @@
 """
-Agents MCP du Cyber Career Compass — V7.
+Agents MCP du Cyber Career Compass — V7.1.
 
-Intègre Gmail et Google Calendar via Composio MCP (SSE distant).
-Deux fonctions exposées comme tools pour le app.py :
+Intègre Gmail et Google Calendar via Composio MCP (Streamable HTTP).
+Composio utilise le transport Streamable HTTP (pas SSE).
+Requiert le header x-api-key avec la clé API Composio.
+
+Deux fonctions exposées pour app.py :
   - envoyer_par_mail(destinataire, contenu) → envoie le plan par Gmail
   - planifier_calendrier(contenu) → crée les événements dans Google Calendar
-
-Architecture : agents-as-tools (même pattern que cyber_agents.py)
-Les serveurs MCP sont connectés via MCPServerSse (Composio URLs).
 """
 
 import os
 import asyncio
 from agents import Agent, Runner, function_tool
-from agents.mcp import MCPServerSse
+from agents.mcp import MCPServerStreamableHttp
 from config import groq_model, register_agent
 
-# ── URLs MCP depuis les secrets ──────────────────────────────────────────────
-# Ces URLs sont stockées dans les secrets Streamlit (ou .env)
+# ── URLs MCP + clé API depuis les secrets ────────────────────────────────────
 
 try:
     import streamlit as st
@@ -31,12 +30,15 @@ except Exception:
 
 COMPOSIO_MCP_GMAIL_URL = os.environ.get("COMPOSIO_MCP_GMAIL_URL") or _secrets_get("COMPOSIO_MCP_GMAIL_URL")
 COMPOSIO_MCP_CALENDAR_URL = os.environ.get("COMPOSIO_MCP_CALENDAR_URL") or _secrets_get("COMPOSIO_MCP_CALENDAR_URL")
+COMPOSIO_API_KEY = os.environ.get("COMPOSIO_API_KEY") or _secrets_get("COMPOSIO_API_KEY")
 
-MCP_GMAIL_AVAILABLE = bool(COMPOSIO_MCP_GMAIL_URL)
-MCP_CALENDAR_AVAILABLE = bool(COMPOSIO_MCP_CALENDAR_URL)
+MCP_GMAIL_AVAILABLE = bool(COMPOSIO_MCP_GMAIL_URL and COMPOSIO_API_KEY)
+MCP_CALENDAR_AVAILABLE = bool(COMPOSIO_MCP_CALENDAR_URL and COMPOSIO_API_KEY)
 
 print(f"[MCP] Gmail: {'✅ configuré' if MCP_GMAIL_AVAILABLE else '❌ non configuré'}")
 print(f"[MCP] Calendar: {'✅ configuré' if MCP_CALENDAR_AVAILABLE else '❌ non configuré'}")
+if not COMPOSIO_API_KEY:
+    print("[MCP] ⚠️ COMPOSIO_API_KEY manquante — les MCP ne fonctionneront pas")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -46,12 +48,15 @@ print(f"[MCP] Calendar: {'✅ configuré' if MCP_CALENDAR_AVAILABLE else '❌ no
 async def _envoyer_mail_mcp(destinataire: str, sujet: str, contenu: str) -> str:
     """Connecte le serveur MCP Gmail, crée un agent, envoie le mail."""
     if not MCP_GMAIL_AVAILABLE:
-        return "❌ Gmail MCP non configuré. Ajoutez COMPOSIO_MCP_GMAIL_URL dans les secrets."
+        return "❌ Gmail MCP non configuré. Ajoutez COMPOSIO_MCP_GMAIL_URL et COMPOSIO_API_KEY dans les secrets."
 
     try:
-        async with MCPServerSse(
+        async with MCPServerStreamableHttp(
             name="Gmail Composio",
-            params={"url": COMPOSIO_MCP_GMAIL_URL},
+            params={
+                "url": COMPOSIO_MCP_GMAIL_URL,
+                "headers": {"x-api-key": COMPOSIO_API_KEY},
+            },
             cache_tools_list=True,
         ) as gmail_server:
 
@@ -88,12 +93,15 @@ async def _envoyer_mail_mcp(destinataire: str, sujet: str, contenu: str) -> str:
 async def _planifier_calendrier_mcp(contenu_plan: str) -> str:
     """Connecte le serveur MCP Calendar, crée un agent, planifie les événements."""
     if not MCP_CALENDAR_AVAILABLE:
-        return "❌ Google Calendar MCP non configuré. Ajoutez COMPOSIO_MCP_CALENDAR_URL dans les secrets."
+        return "❌ Google Calendar MCP non configuré. Ajoutez COMPOSIO_MCP_CALENDAR_URL et COMPOSIO_API_KEY dans les secrets."
 
     try:
-        async with MCPServerSse(
+        async with MCPServerStreamableHttp(
             name="Google Calendar Composio",
-            params={"url": COMPOSIO_MCP_CALENDAR_URL},
+            params={
+                "url": COMPOSIO_MCP_CALENDAR_URL,
+                "headers": {"x-api-key": COMPOSIO_API_KEY},
+            },
             cache_tools_list=True,
         ) as calendar_server:
 
