@@ -50,6 +50,12 @@ async def _envoyer_mail_mcp(destinataire: str, sujet: str, contenu: str) -> str:
     if not MCP_GMAIL_AVAILABLE:
         return "❌ Gmail MCP non configuré. Ajoutez COMPOSIO_MCP_GMAIL_URL et COMPOSIO_API_KEY dans les secrets."
 
+    # Tronquer le contenu pour rester sous la limite tokens Groq (10k TPM)
+    # On garde max ~3000 caractères pour laisser de la place au prompt + tools
+    contenu_tronque = contenu[:3000]
+    if len(contenu) > 3000:
+        contenu_tronque += "\n\n[... plan complet tronqué pour l'envoi — consultez l'app pour la version complète]"
+
     try:
         async with MCPServerStreamableHttp(
             name="Gmail Composio",
@@ -76,7 +82,7 @@ async def _envoyer_mail_mcp(destinataire: str, sujet: str, contenu: str) -> str:
             task = (
                 f"Envoie un email à {destinataire} "
                 f"avec le sujet '{sujet}' "
-                f"et le contenu suivant :\n\n{contenu}"
+                f"et le contenu suivant :\n\n{contenu_tronque}"
             )
 
             result = await Runner.run(agent_gmail, input=task, max_turns=5)
@@ -94,6 +100,10 @@ async def _planifier_calendrier_mcp(contenu_plan: str) -> str:
     """Connecte le serveur MCP Calendar, crée un agent, planifie les événements."""
     if not MCP_CALENDAR_AVAILABLE:
         return "❌ Google Calendar MCP non configuré. Ajoutez COMPOSIO_MCP_CALENDAR_URL et COMPOSIO_API_KEY dans les secrets."
+
+    # Tronquer le plan pour rester sous la limite tokens Groq
+    # On garde le parcours guidé (les étapes clés) — max ~3000 caractères
+    contenu_tronque = contenu_plan[:3000]
 
     try:
         async with MCPServerStreamableHttp(
@@ -128,7 +138,7 @@ async def _planifier_calendrier_mcp(contenu_plan: str) -> str:
             task = (
                 "À partir du plan d'apprentissage suivant, crée des événements "
                 "dans Google Calendar pour chaque phase du parcours :\n\n"
-                f"{contenu_plan}"
+                f"{contenu_tronque}"
             )
 
             result = await Runner.run(agent_calendar, input=task, max_turns=10)
