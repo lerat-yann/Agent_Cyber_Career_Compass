@@ -1,9 +1,9 @@
 """
-Agents MCP du Cyber Career Compass — V7.1.
+Agents MCP du Cyber Career Compass — V7.3.
 
 Intègre Gmail et Google Calendar via Composio MCP (Streamable HTTP).
-Composio utilise le transport Streamable HTTP (pas SSE).
-Requiert le header x-api-key avec la clé API Composio.
+Les agents MCP utilisent OpenRouter (pas Groq) pour éviter la limite
+de 10k tokens/requête de Groq free tier. Le contenu est envoyé intégralement.
 
 Deux fonctions exposées pour app.py :
   - envoyer_par_mail(destinataire, contenu) → envoie le plan par Gmail
@@ -14,7 +14,7 @@ import os
 import asyncio
 from agents import Agent, Runner, function_tool
 from agents.mcp import MCPServerStreamableHttp
-from config import groq_model, register_agent
+import config
 
 # ── URLs MCP + clé API depuis les secrets ────────────────────────────────────
 
@@ -41,6 +41,15 @@ if not COMPOSIO_API_KEY:
     print("[MCP] ⚠️ COMPOSIO_API_KEY manquante — les MCP ne fonctionneront pas")
 
 
+def _get_mcp_model():
+    """Retourne le modèle à utiliser pour les agents MCP.
+    Préfère OpenRouter (pas de limite 10k tokens) si disponible,
+    sinon fallback sur le modèle principal (Groq)."""
+    if config._openrouter_model_main:
+        return config._openrouter_model_main
+    return config.groq_model
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # FONCTION : Envoyer un plan par mail via Gmail MCP
 # ══════════════════════════════════════════════════════════════════════════════
@@ -49,12 +58,6 @@ async def _envoyer_mail_mcp(destinataire: str, sujet: str, contenu: str) -> str:
     """Connecte le serveur MCP Gmail, crée un agent, envoie le mail."""
     if not MCP_GMAIL_AVAILABLE:
         return "❌ Gmail MCP non configuré. Ajoutez COMPOSIO_MCP_GMAIL_URL et COMPOSIO_API_KEY dans les secrets."
-
-    # Tronquer le contenu pour rester sous la limite tokens Groq (10k TPM)
-    # On garde max ~3000 caractères pour laisser de la place au prompt + tools
-    contenu_tronque = contenu[:3000]
-    if len(contenu) > 3000:
-        contenu_tronque += "\n\n[... plan complet tronqué pour l'envoi — consultez l'app pour la version complète]"
 
     try:
         async with MCPServerStreamableHttp(
@@ -76,13 +79,13 @@ async def _envoyer_mail_mcp(destinataire: str, sujet: str, contenu: str) -> str:
                     "Réponds en français."
                 ),
                 mcp_servers=[gmail_server],
-                model=groq_model,
+                model=_get_mcp_model(),
             )
 
             task = (
                 f"Envoie un email à {destinataire} "
                 f"avec le sujet '{sujet}' "
-                f"et le contenu suivant :\n\n{contenu_tronque}"
+                f"et le contenu suivant :\n\n{contenu}"
             )
 
             result = await Runner.run(agent_gmail, input=task, max_turns=5)
@@ -100,10 +103,6 @@ async def _planifier_calendrier_mcp(contenu_plan: str) -> str:
     """Connecte le serveur MCP Calendar, crée un agent, planifie les événements."""
     if not MCP_CALENDAR_AVAILABLE:
         return "❌ Google Calendar MCP non configuré. Ajoutez COMPOSIO_MCP_CALENDAR_URL et COMPOSIO_API_KEY dans les secrets."
-
-    # Tronquer le plan pour rester sous la limite tokens Groq
-    # On garde le parcours guidé (les étapes clés) — max ~3000 caractères
-    contenu_tronque = contenu_plan[:3000]
 
     try:
         async with MCPServerStreamableHttp(
@@ -132,13 +131,13 @@ async def _planifier_calendrier_mcp(contenu_plan: str) -> str:
                     "- Réponds en français"
                 ),
                 mcp_servers=[calendar_server],
-                model=groq_model,
+                model=_get_mcp_model(),
             )
 
             task = (
                 "À partir du plan d'apprentissage suivant, crée des événements "
                 "dans Google Calendar pour chaque phase du parcours :\n\n"
-                f"{contenu_tronque}"
+                f"{contenu_plan}"
             )
 
             result = await Runner.run(agent_calendar, input=task, max_turns=10)
