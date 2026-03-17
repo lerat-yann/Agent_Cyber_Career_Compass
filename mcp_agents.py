@@ -55,46 +55,36 @@ def _calendar_tool_filter(context, tool):
 
 
 def _extract_parcours(contenu: str) -> str:
-    """Extrait uniquement les étapes/phases du parcours depuis le plan complet.
-    Réduit le contenu de ~8000 à ~1500 caractères pour rester sous 10k tokens Groq.
-    L'utilisateur voit toujours le plan complet — cette extraction est uniquement
-    pour l'agent Calendar qui n'a besoin que des étapes."""
+    """Extrait uniquement les étapes du parcours depuis le plan complet.
+    
+    Stratégie robuste : on cherche les lignes qui ressemblent à des étapes
+    (numérotées, avec →, ou contenant Phase/Mois). On garde max 15 lignes
+    pour rester largement sous 10k tokens Groq.
+    
+    L'utilisateur voit toujours le plan complet — cette extraction est
+    uniquement pour l'agent Calendar."""
     lines = contenu.split("\n")
-    parcours_lines = []
-    in_parcours = False
-
-    for line in lines:
-        lower = line.lower().strip()
-        # Détecter les sections parcours/planning/phases/mois
-        if any(kw in lower for kw in [
-            "parcours guidé", "parcours", "planning",
-            "phase 1", "phase 2", "phase 3",
-            "mois 1", "mois 2", "mois 3", "mois 4", "mois 5",
-            "mois 6", "mois 7", "mois 8", "mois 9", "mois 10",
-            "étape 1", "étape 2", "étape 3",
-        ]):
-            in_parcours = True
-        if in_parcours:
-            parcours_lines.append(line)
-        # Stopper à la fin du parcours
-        if in_parcours and any(kw in lower for kw in [
-            "budget", "marché réel", "conseil concret", "💰", "📊",
-        ]):
-            break
-
-    if parcours_lines:
-        return "\n".join(parcours_lines)
-
-    # Fallback : si pas de section parcours trouvée, résumer les lignes clés
-    key_lines = [l for l in lines if any(kw in l.lower() for kw in [
-        "phase", "mois", "étape", "→", "certification", "linux", "web",
-        "pratique", "ctf", "réseau", "pentest",
-    ])]
-    if key_lines:
-        return "\n".join(key_lines[:20])
-
-    # Dernier recours
-    return contenu[:2000]
+    
+    # Stratégie 1 : lignes numérotées avec → (format "1. Bases Linux → TryHackMe")
+    arrow_lines = [l.strip() for l in lines if "→" in l and l.strip()]
+    if len(arrow_lines) >= 3:
+        return "\n".join(arrow_lines[:10])
+    
+    # Stratégie 2 : lignes contenant "Mois" ou "Phase" (format "Mois 1-2 : Fondations")
+    phase_lines = [l.strip() for l in lines 
+                   if any(kw in l.lower() for kw in ["mois ", "phase "])
+                   and l.strip()]
+    if len(phase_lines) >= 2:
+        return "\n".join(phase_lines[:10])
+    
+    # Stratégie 3 : lignes numérotées (format "1. xxx", "2. xxx")
+    import re
+    numbered = [l.strip() for l in lines if re.match(r'^\d+[\.\)]\s', l.strip())]
+    if len(numbered) >= 3:
+        return "\n".join(numbered[:10])
+    
+    # Dernier recours : les 1500 premiers caractères
+    return contenu[:1500]
 
 
 # ══════════════════════════════════════════════════════════════════════════════
