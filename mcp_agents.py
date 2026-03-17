@@ -130,9 +130,39 @@ async def _planifier_calendrier_mcp(contenu_plan: str) -> str:
     if not MCP_CALENDAR_AVAILABLE:
         return "❌ Google Calendar MCP non configuré. Ajoutez COMPOSIO_MCP_CALENDAR_URL et COMPOSIO_API_KEY dans les secrets."
 
-    # Extraire uniquement les étapes/phases du parcours pour rester sous 10k tokens.
-    # L'agent Calendar n'a besoin que des étapes, pas des ressources ni du marché.
+    # Extraire uniquement les étapes/phases du parcours
     parcours = _extract_parcours(contenu_plan)
+
+    # Calculer les dates en Python — le LLM n'a plus rien à deviner
+    from datetime import date, timedelta
+    import re
+
+    today = date.today()
+    start = today + timedelta(days=7)
+    etapes = parcours.strip().split("\n")
+    etapes = [e.strip() for e in etapes if e.strip()]
+
+    events_with_dates = []
+    current_date = start
+
+    for etape in etapes:
+        # Essayer de détecter la durée dans le texte (ex: "Mois 1-2", "2-3 mois")
+        duree_mois = 1  # défaut : 1 mois par étape
+        duree_match = re.search(r'(\d+)\s*[-–à]\s*(\d+)\s*mois', etape.lower())
+        if duree_match:
+            duree_mois = int(duree_match.group(2)) - int(duree_match.group(1)) + 1
+        else:
+            mois_match = re.search(r'mois\s*(\d+)\s*[-–]\s*(\d+)', etape.lower())
+            if mois_match:
+                duree_mois = int(mois_match.group(2)) - int(mois_match.group(1)) + 1
+
+        event_date = current_date.strftime('%Y-%m-%d')
+        events_with_dates.append(f"- Date: {event_date} | Titre: 'Cyber Compass — {etape}'")
+
+        # Avancer de la durée de cette étape (en mois → ~30 jours par mois)
+        current_date += timedelta(days=duree_mois * 30)
+
+    events_text = "\n".join(events_with_dates)
 
     try:
         async with MCPServerStreamableHttp(
@@ -145,23 +175,16 @@ async def _planifier_calendrier_mcp(contenu_plan: str) -> str:
             tool_filter=_calendar_tool_filter,
         ) as calendar_server:
 
-            from datetime import date, timedelta
-            today = date.today()
-            start = today + timedelta(days=7)
-
             agent_calendar = Agent(
                 name="Agent Google Calendar MCP",
-                instructions="Crée les événements demandés. Confirme en français.",
+                instructions="Crée exactement les événements listés aux dates indiquées. Confirme en français.",
                 mcp_servers=[calendar_server],
                 model=config.groq_model,
             )
 
             task = (
-                f"Date d'aujourd'hui : {today.strftime('%Y-%m-%d')}.\n"
-                f"Crée UN événement all-day par étape, en commençant le {start.strftime('%Y-%m-%d')}.\n"
-                f"Espace chaque événement de 7 jours (semaine suivante).\n"
-                f"Titre : 'Cyber Compass — [nom étape]'.\n\n"
-                f"Étapes :\n{parcours}"
+                f"Crée ces événements all-day dans Google Calendar :\n\n"
+                f"{events_text}"
             )
 
             result = await Runner.run(agent_calendar, input=task, max_turns=10)
