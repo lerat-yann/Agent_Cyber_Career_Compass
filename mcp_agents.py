@@ -1,15 +1,10 @@
 """
-Agents MCP du Cyber Career Compass — V7.4.
+Agents MCP du Cyber Career Compass — V7.5.
 
 Intègre Gmail et Google Calendar via Composio MCP (Streamable HTTP).
-
-Les agents MCP utilisent Groq (Kimi K2) car c'est le seul modèle gratuit
-avec un tool-calling fiable. Pour rester sous la limite 10k tokens de Groq,
-on minimise les instructions et on envoie le contenu de façon compacte.
-
-Deux fonctions exposées pour app.py :
-  - envoyer_par_mail(destinataire, contenu) → envoie le plan par Gmail
-  - planifier_calendrier(contenu) → crée les événements dans Google Calendar
+Utilise tool_filter pour n'exposer que les tools nécessaires (1-2 par serveur)
+au lieu des 22 par défaut. Cela réduit les tokens de ~5000 à ~500,
+permettant d'envoyer le contenu intégral sous la limite Groq 10k.
 """
 
 import os
@@ -43,37 +38,20 @@ if not COMPOSIO_API_KEY:
     print("[MCP] ⚠️ COMPOSIO_API_KEY manquante — les MCP ne fonctionneront pas")
 
 
-def _extract_parcours(contenu: str) -> str:
-    """Extrait uniquement la section parcours/étapes du plan complet.
-    Cela réduit drastiquement la taille envoyée au LLM Calendar
-    tout en gardant les informations utiles pour créer les événements."""
-    lines = contenu.split("\n")
-    parcours_lines = []
-    in_parcours = False
+# ── Tool filters ─────────────────────────────────────────────────────────────
+# On ne garde que les tools strictement nécessaires pour réduire les tokens.
+# Les noms exacts seront découverts au premier run — on filtre par mots-clés.
 
-    for line in lines:
-        lower = line.lower().strip()
-        # Détecter le début d'une section parcours/planning
-        if any(kw in lower for kw in ["parcours", "mois 1", "mois 2", "phase 1", "phase 2",
-                                        "étape 1", "étape 2", "planning", "calendrier",
-                                        "semaine 1", "semaine 2"]):
-            in_parcours = True
-        # Détecter les sections qu'on veut garder aussi
-        if any(kw in lower for kw in ["compétences à maîtriser", "fiche métier"]):
-            # Garder le titre du métier
-            if "fiche métier" in lower or "plan complet" in lower:
-                parcours_lines.append(line)
-        if in_parcours:
-            parcours_lines.append(line)
-        # Stopper si on atteint une section non pertinente après le parcours
-        if in_parcours and any(kw in lower for kw in ["budget", "marché réel", "conseil concret"]):
-            break
+def _gmail_tool_filter(context, tool):
+    """Ne garde que les tools d'envoi de mail."""
+    name = tool.name.lower()
+    return any(kw in name for kw in ["send", "create_draft", "create_email"])
 
-    if parcours_lines:
-        return "\n".join(parcours_lines)
 
-    # Fallback : si pas de section parcours détectée, prendre les 2000 premiers caractères
-    return contenu[:2000]
+def _calendar_tool_filter(context, tool):
+    """Ne garde que le tool de création d'événement."""
+    name = tool.name.lower()
+    return "create_event" in name or "create_a_event" in name or "insert_event" in name
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -85,12 +63,6 @@ async def _envoyer_mail_mcp(destinataire: str, sujet: str, contenu: str) -> str:
     if not MCP_GMAIL_AVAILABLE:
         return "❌ Gmail MCP non configuré. Ajoutez COMPOSIO_MCP_GMAIL_URL et COMPOSIO_API_KEY dans les secrets."
 
-    # Limiter le contenu du mail à ~6000 caractères pour rester sous 10k tokens
-    # (instructions + tool schema + contenu doivent tenir dans 10k)
-    contenu_mail = contenu[:6000]
-    if len(contenu) > 6000:
-        contenu_mail += "\n\n---\nPlan complet disponible sur Cyber Career Compass."
-
     try:
         async with MCPServerStreamableHttp(
             name="Gmail Composio",
@@ -99,9 +71,9 @@ async def _envoyer_mail_mcp(destinataire: str, sujet: str, contenu: str) -> str:
                 "headers": {"x-api-key": COMPOSIO_API_KEY},
             },
             cache_tools_list=True,
+            tool_filter=_gmail_tool_filter,
         ) as gmail_server:
 
-            # Instructions ultra-courtes pour économiser des tokens
             agent_gmail = Agent(
                 name="Agent Gmail MCP",
                 instructions="Envoie l'email demandé via Gmail. Confirme en français.",
@@ -112,7 +84,7 @@ async def _envoyer_mail_mcp(destinataire: str, sujet: str, contenu: str) -> str:
             task = (
                 f"Envoie un email à {destinataire} "
                 f"avec le sujet '{sujet}' "
-                f"et ce contenu :\n\n{contenu_mail}"
+                f"et ce contenu :\n\n{contenu}"
             )
 
             result = await Runner.run(agent_gmail, input=task, max_turns=5)
@@ -131,9 +103,6 @@ async def _planifier_calendrier_mcp(contenu_plan: str) -> str:
     if not MCP_CALENDAR_AVAILABLE:
         return "❌ Google Calendar MCP non configuré. Ajoutez COMPOSIO_MCP_CALENDAR_URL et COMPOSIO_API_KEY dans les secrets."
 
-    # Extraire uniquement le parcours (étapes/mois) pour rester sous 10k tokens
-    parcours = _extract_parcours(contenu_plan)
-
     try:
         async with MCPServerStreamableHttp(
             name="Google Calendar Composio",
@@ -142,14 +111,14 @@ async def _planifier_calendrier_mcp(contenu_plan: str) -> str:
                 "headers": {"x-api-key": COMPOSIO_API_KEY},
             },
             cache_tools_list=True,
+            tool_filter=_calendar_tool_filter,
         ) as calendar_server:
 
-            # Instructions compactes
             agent_calendar = Agent(
                 name="Agent Google Calendar MCP",
                 instructions=(
                     "Crée des événements Google Calendar pour chaque étape du parcours.\n"
-                    "Événements all-day, premier dans 7 jours.\n"
+                    "Événements all-day, premier dans 7 jours à partir d'aujourd'hui.\n"
                     "Titre : 'Cyber Compass — [étape]'.\n"
                     "Confirme en français."
                 ),
@@ -159,7 +128,7 @@ async def _planifier_calendrier_mcp(contenu_plan: str) -> str:
 
             task = (
                 "Crée des événements Calendar pour ce parcours :\n\n"
-                f"{parcours}"
+                f"{contenu_plan}"
             )
 
             result = await Runner.run(agent_calendar, input=task, max_turns=10)
