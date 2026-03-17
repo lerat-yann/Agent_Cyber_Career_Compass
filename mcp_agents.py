@@ -56,35 +56,29 @@ def _calendar_tool_filter(context, tool):
 
 def _extract_parcours(contenu: str) -> str:
     """Extrait uniquement les étapes du parcours depuis le plan complet.
-    
-    Stratégie robuste : on cherche les lignes qui ressemblent à des étapes
-    (numérotées, avec →, ou contenant Phase/Mois). On garde max 15 lignes
-    pour rester largement sous 10k tokens Groq.
-    
-    L'utilisateur voit toujours le plan complet — cette extraction est
-    uniquement pour l'agent Calendar."""
+    Max 6 lignes pour rester sous 10k tokens Groq avec le schéma du tool."""
     lines = contenu.split("\n")
     
-    # Stratégie 1 : lignes numérotées avec → (format "1. Bases Linux → TryHackMe")
+    # Stratégie 1 : lignes avec → (format "1. Bases Linux → TryHackMe")
     arrow_lines = [l.strip() for l in lines if "→" in l and l.strip()]
     if len(arrow_lines) >= 3:
-        return "\n".join(arrow_lines[:10])
+        return "\n".join(arrow_lines[:6])
     
-    # Stratégie 2 : lignes contenant "Mois" ou "Phase" (format "Mois 1-2 : Fondations")
+    # Stratégie 2 : lignes contenant "Mois" ou "Phase"
     phase_lines = [l.strip() for l in lines 
                    if any(kw in l.lower() for kw in ["mois ", "phase "])
                    and l.strip()]
     if len(phase_lines) >= 2:
-        return "\n".join(phase_lines[:10])
+        return "\n".join(phase_lines[:6])
     
-    # Stratégie 3 : lignes numérotées (format "1. xxx", "2. xxx")
+    # Stratégie 3 : lignes numérotées
     import re
     numbered = [l.strip() for l in lines if re.match(r'^\d+[\.\)]\s', l.strip())]
     if len(numbered) >= 3:
-        return "\n".join(numbered[:10])
+        return "\n".join(numbered[:6])
     
-    # Dernier recours : les 1500 premiers caractères
-    return contenu[:1500]
+    # Dernier recours
+    return contenu[:800]
 
 
 # ══════════════════════════════════════════════════════════════════════════════
