@@ -138,7 +138,7 @@ async def _planifier_calendrier_mcp(contenu_plan: str) -> str:
     import re
 
     today = date.today()
-    start = today + timedelta(days=7)
+    start = today  # Le parcours commence aujourd'hui
     etapes = parcours.strip().split("\n")
     etapes = [e.strip() for e in etapes if e.strip()]
 
