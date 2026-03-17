@@ -54,6 +54,49 @@ def _calendar_tool_filter(context, tool):
     return "create_event" in name or "create_a_event" in name or "insert_event" in name
 
 
+def _extract_parcours(contenu: str) -> str:
+    """Extrait uniquement les étapes/phases du parcours depuis le plan complet.
+    Réduit le contenu de ~8000 à ~1500 caractères pour rester sous 10k tokens Groq.
+    L'utilisateur voit toujours le plan complet — cette extraction est uniquement
+    pour l'agent Calendar qui n'a besoin que des étapes."""
+    lines = contenu.split("\n")
+    parcours_lines = []
+    in_parcours = False
+
+    for line in lines:
+        lower = line.lower().strip()
+        # Détecter les sections parcours/planning/phases/mois
+        if any(kw in lower for kw in [
+            "parcours guidé", "parcours", "planning",
+            "phase 1", "phase 2", "phase 3",
+            "mois 1", "mois 2", "mois 3", "mois 4", "mois 5",
+            "mois 6", "mois 7", "mois 8", "mois 9", "mois 10",
+            "étape 1", "étape 2", "étape 3",
+        ]):
+            in_parcours = True
+        if in_parcours:
+            parcours_lines.append(line)
+        # Stopper à la fin du parcours
+        if in_parcours and any(kw in lower for kw in [
+            "budget", "marché réel", "conseil concret", "💰", "📊",
+        ]):
+            break
+
+    if parcours_lines:
+        return "\n".join(parcours_lines)
+
+    # Fallback : si pas de section parcours trouvée, résumer les lignes clés
+    key_lines = [l for l in lines if any(kw in l.lower() for kw in [
+        "phase", "mois", "étape", "→", "certification", "linux", "web",
+        "pratique", "ctf", "réseau", "pentest",
+    ])]
+    if key_lines:
+        return "\n".join(key_lines[:20])
+
+    # Dernier recours
+    return contenu[:2000]
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # FONCTION : Envoyer un plan par mail via Gmail MCP
 # ══════════════════════════════════════════════════════════════════════════════
@@ -103,6 +146,10 @@ async def _planifier_calendrier_mcp(contenu_plan: str) -> str:
     if not MCP_CALENDAR_AVAILABLE:
         return "❌ Google Calendar MCP non configuré. Ajoutez COMPOSIO_MCP_CALENDAR_URL et COMPOSIO_API_KEY dans les secrets."
 
+    # Extraire uniquement les étapes/phases du parcours pour rester sous 10k tokens.
+    # L'agent Calendar n'a besoin que des étapes, pas des ressources ni du marché.
+    parcours = _extract_parcours(contenu_plan)
+
     try:
         async with MCPServerStreamableHttp(
             name="Google Calendar Composio",
@@ -129,7 +176,7 @@ async def _planifier_calendrier_mcp(contenu_plan: str) -> str:
 
             task = (
                 "Crée des événements Calendar pour ce parcours :\n\n"
-                f"{contenu_plan}"
+                f"{parcours}"
             )
 
             result = await Runner.run(agent_calendar, input=task, max_turns=10)
