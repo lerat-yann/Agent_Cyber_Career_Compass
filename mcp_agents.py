@@ -117,6 +117,7 @@ async def _planifier_calendrier_mcp(contenu_plan: str) -> str:
             agent_calendar = Agent(
                 name="Agent Google Calendar MCP",
                 instructions=(
+                    f"Nous sommes le {__import__('datetime').date.today().strftime('%d/%m/%Y')}.\n"
                     "Crée des événements Google Calendar pour chaque étape du parcours.\n"
                     "Événements all-day, premier dans 7 jours à partir d'aujourd'hui.\n"
                     "Titre : 'Cyber Compass — [étape]'.\n"
