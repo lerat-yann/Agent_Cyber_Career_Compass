@@ -145,22 +145,23 @@ async def _planifier_calendrier_mcp(contenu_plan: str) -> str:
             tool_filter=_calendar_tool_filter,
         ) as calendar_server:
 
+            from datetime import date, timedelta
+            today = date.today()
+            start = today + timedelta(days=7)
+
             agent_calendar = Agent(
                 name="Agent Google Calendar MCP",
-                instructions=(
-                    f"Nous sommes le {__import__('datetime').date.today().strftime('%d/%m/%Y')}.\n"
-                    "Crée des événements Google Calendar pour chaque étape du parcours.\n"
-                    "Événements all-day, premier dans 7 jours à partir d'aujourd'hui.\n"
-                    "Titre : 'Cyber Compass — [étape]'.\n"
-                    "Confirme en français."
-                ),
+                instructions="Crée les événements demandés. Confirme en français.",
                 mcp_servers=[calendar_server],
                 model=config.groq_model,
             )
 
             task = (
-                "Crée des événements Calendar pour ce parcours :\n\n"
-                f"{parcours}"
+                f"Date d'aujourd'hui : {today.strftime('%Y-%m-%d')}.\n"
+                f"Crée UN événement all-day par étape, en commençant le {start.strftime('%Y-%m-%d')}.\n"
+                f"Espace chaque événement de 7 jours (semaine suivante).\n"
+                f"Titre : 'Cyber Compass — [nom étape]'.\n\n"
+                f"Étapes :\n{parcours}"
             )
 
             result = await Runner.run(agent_calendar, input=task, max_turns=10)
