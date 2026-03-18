@@ -2,7 +2,7 @@
 
 Un assistant d'orientation vers les métiers de la cybersécurité, basé sur une architecture **multi-agents** avec des **données réelles** (MITRE ATT&CK, NIST NVD, NIST NICE Framework, France Travail) et une **intégration MCP** (Gmail + Google Calendar via Composio).
 
-> **[🚀 Démo live sur Streamlit Cloud]([https://cyber-career-compass.streamlit.app/])**
+> **[🚀 Démo live sur Streamlit Cloud](https://cyber-career-compass.streamlit.app/)**
 
 ---
 
