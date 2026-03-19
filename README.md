@@ -114,6 +114,21 @@ Assemble de manière **déterministe** pour chaque métier :
 - **Extraction intelligente du parcours** : pour Calendar, seules les étapes sont extraites (3 stratégies : lignes avec →, lignes "Mois/Phase", lignes numérotées)
 - **Dates calculées en Python** : les dates des événements Calendar sont calculées avec `datetime` en respectant la durée de chaque phase, pas par le LLM
 
+### ⚠️ Limitation Google Calendar (version actuelle)
+
+**Le bouton 📧 Gmail fonctionne pour tous les utilisateurs** — le mail est envoyé depuis le compte de l'application vers n'importe quelle adresse email.
+
+**Le bouton 📅 Google Calendar ne fonctionne que pour le compte du développeur.** Les événements sont créés dans le calendrier Google lié au compte Composio de l'application. Un utilisateur externe ne verra pas les événements dans son propre calendrier.
+
+**Pourquoi ?** L'URL MCP Composio est liée à un seul compte Google via OAuth. Pour que chaque utilisateur puisse utiliser son propre calendrier, il faudrait un flux d'authentification individuel.
+
+**Roadmap V8 — Google Calendar multi-utilisateurs :**
+- Ajouter un bouton "Connecter mon Google Calendar" dans la sidebar
+- Implémenter un flux OAuth 2.0 Google par utilisateur (redirection → autorisation → callback)
+- Stocker le token OAuth de chaque utilisateur dans sa session Streamlit (`st.session_state`)
+- Passer le token utilisateur au serveur MCP Composio (via le paramètre `user_id` de l'URL ou via les Connected Accounts Composio)
+- Alternative : héberger un serveur MCP Google Calendar custom qui accepte un token par requête
+
 ---
 
 ## Guardrails (`guardrails.py`)
