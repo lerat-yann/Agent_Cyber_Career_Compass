@@ -2,7 +2,7 @@
 
 Un assistant d'orientation vers les métiers de la cybersécurité, basé sur une architecture **multi-agents** avec des **données réelles** (MITRE ATT&CK, NIST NVD, NIST NICE Framework, France Travail) et une **intégration MCP** (Gmail + Google Calendar via Composio).
 
-> **[🚀 Démo live sur Streamlit Cloud](https://agent-cyber-career-compass.streamlit.app/)**
+> **[🚀 Démo live sur Streamlit Cloud](https://cyber-career-compass.streamlit.app/)**
 
 ---
 
@@ -57,25 +57,25 @@ Chaque agent spécialisé est wrappé comme un outil de délégation que le mana
 
 ### Agents principaux (orchestration cyber)
 
-| # | Agent | Fichier | Rôle | Outils utilisés |
-|---|-------|---------|------|-----------------|
-| 1 | **Manager — Orchestrateur** | `manager.py` | Reçoit la question, décide quels agents appeler, synthétise la réponse finale | 4 outils de délégation |
-| 2 | **Agent Marché Emploi** | `cyber_agents.py` | Recherche en temps réel les offres d'emploi cyber via l'API France Travail | `get_job_market_data` |
-| 3 | **Agent Matching Profil** | `cyber_agents.py` | Analyse le profil utilisateur et recommande 1 à 3 métiers cyber compatibles | `get_all_roles_overview`, `get_role_details` |
-| 4 | **Agent Knowledge Map** | `cyber_agents.py` | Relie un métier aux concepts cyber réels (MITRE ATT&CK, CVE, groupes APT) | `get_mitre_techniques_for_role`, `get_mitre_groups_and_software`, `get_mitre_cve_context`, `get_mitre_latest_techniques` |
-| 5 | **Agent Learning Coach** | `agent_learning_coach.py` | Base de ressources curatées (10 domaines × 8 catégories × FR/EN) | `get_ressources_domaine`, `list_domaines_disponibles` |
+| #   | Agent                       | Fichier                   | Rôle                                                                          | Outils utilisés                                                                                                          |
+| --- | --------------------------- | ------------------------- | ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| 1   | **Manager — Orchestrateur** | `manager.py`              | Reçoit la question, décide quels agents appeler, synthétise la réponse finale | 4 outils de délégation                                                                                                   |
+| 2   | **Agent Marché Emploi**     | `cyber_agents.py`         | Recherche en temps réel les offres d'emploi cyber via l'API France Travail    | `get_job_market_data`                                                                                                    |
+| 3   | **Agent Matching Profil**   | `cyber_agents.py`         | Analyse le profil utilisateur et recommande 1 à 3 métiers cyber compatibles   | `get_all_roles_overview`, `get_role_details`                                                                             |
+| 4   | **Agent Knowledge Map**     | `cyber_agents.py`         | Relie un métier aux concepts cyber réels (MITRE ATT&CK, CVE, groupes APT)     | `get_mitre_techniques_for_role`, `get_mitre_groups_and_software`, `get_mitre_cve_context`, `get_mitre_latest_techniques` |
+| 5   | **Agent Learning Coach**    | `agent_learning_coach.py` | Base de ressources curatées (10 domaines × 8 catégories × FR/EN)              | `get_ressources_domaine`, `list_domaines_disponibles`                                                                    |
 
 ### Agents MCP (intégrations externes via Composio)
 
-| # | Agent | Fichier | Rôle | Protocole |
-|---|-------|---------|------|-----------|
-| 6 | **Agent Gmail MCP** | `mcp_agents.py` | Envoie le plan d'apprentissage complet par email via Gmail | MCP Streamable HTTP (Composio) |
-| 7 | **Agent Google Calendar MCP** | `mcp_agents.py` | Crée des événements dans Google Calendar pour chaque phase du parcours | MCP Streamable HTTP (Composio) |
+| #   | Agent                         | Fichier         | Rôle                                                                   | Protocole                      |
+| --- | ----------------------------- | --------------- | ---------------------------------------------------------------------- | ------------------------------ |
+| 6   | **Agent Gmail MCP**           | `mcp_agents.py` | Envoie le plan d'apprentissage complet par email via Gmail             | MCP Streamable HTTP (Composio) |
+| 7   | **Agent Google Calendar MCP** | `mcp_agents.py` | Crée des événements dans Google Calendar pour chaque phase du parcours | MCP Streamable HTTP (Composio) |
 
 ### Agent auxiliaire
 
-| Agent | Fichier | Rôle |
-|-------|---------|------|
+| Agent                     | Fichier         | Rôle                                                                                                    |
+| ------------------------- | --------------- | ------------------------------------------------------------------------------------------------------- |
 | **Classifieur Guardrail** | `guardrails.py` | Agent éphémère (couche 3) qui classifie les requêtes ambigues comme "orientation_cyber" ou "hors_sujet" |
 
 ---
@@ -85,6 +85,7 @@ Chaque agent spécialisé est wrappé comme un outil de délégation que le mana
 ### Outil principal : `get_plan_complet` (Python pur, 0 appel LLM)
 
 Assemble de manière **déterministe** pour chaque métier :
+
 - Fiche métier NICE Framework (missions, profil, salaire indicatif)
 - Compétences prioritaires classées par importance
 - Ressources curatées avec URLs, étoiles ★, coûts (8 catégories × FR/EN)
@@ -92,24 +93,25 @@ Assemble de manière **déterministe** pour chaque métier :
 
 ### Outils API live (`tools.py`)
 
-| Outil | Source | Type |
-|-------|--------|------|
-| `get_mitre_techniques_for_role` | MITRE ATT&CK REST API | Données réelles live |
-| `get_mitre_groups_and_software` | MITRE ATT&CK REST API | Données réelles live |
-| `get_mitre_cve_context` | NIST NVD API v2.0 | Données réelles live |
-| `get_mitre_latest_techniques` | MITRE ATT&CK REST API | Données réelles live |
-| `get_job_market_data` | France Travail API v2 | Données réelles live |
-| `get_role_details` | NIST NICE Framework SP 800-181 | Statique structuré |
-| `get_all_roles_overview` | NIST NICE Framework | Statique structuré |
+| Outil                           | Source                         | Type                 |
+| ------------------------------- | ------------------------------ | -------------------- |
+| `get_mitre_techniques_for_role` | MITRE ATT&CK REST API          | Données réelles live |
+| `get_mitre_groups_and_software` | MITRE ATT&CK REST API          | Données réelles live |
+| `get_mitre_cve_context`         | NIST NVD API v2.0              | Données réelles live |
+| `get_mitre_latest_techniques`   | MITRE ATT&CK REST API          | Données réelles live |
+| `get_job_market_data`           | France Travail API v2          | Données réelles live |
+| `get_role_details`              | NIST NICE Framework SP 800-181 | Statique structuré   |
+| `get_all_roles_overview`        | NIST NICE Framework            | Statique structuré   |
 
 ### Intégration MCP (`mcp_agents.py`)
 
-| Fonction | Serveur MCP | Transport | Optimisations |
-|----------|-------------|-----------|---------------|
-| `envoyer_par_mail` | Gmail via Composio | Streamable HTTP | Tool filter (1 tool exposé sur 22) |
+| Fonction               | Serveur MCP                  | Transport       | Optimisations                                                                 |
+| ---------------------- | ---------------------------- | --------------- | ----------------------------------------------------------------------------- |
+| `envoyer_par_mail`     | Gmail via Composio           | Streamable HTTP | Tool filter (1 tool exposé sur 22)                                            |
 | `planifier_calendrier` | Google Calendar via Composio | Streamable HTTP | Tool filter (1 tool sur 22) + extraction parcours + dates calculées en Python |
 
 **Optimisations MCP pour respecter la limite Groq 10k tokens :**
+
 - **Tool filtering** : seuls les tools nécessaires sont exposés au LLM (1-2 sur 22), réduisant les tokens de schéma de ~5000 à ~500
 - **Extraction intelligente du parcours** : pour Calendar, seules les étapes sont extraites (3 stratégies : lignes avec →, lignes "Mois/Phase", lignes numérotées)
 - **Dates calculées en Python** : les dates des événements Calendar sont calculées avec `datetime` en respectant la durée de chaque phase, pas par le LLM
@@ -123,6 +125,7 @@ Assemble de manière **déterministe** pour chaque métier :
 **Pourquoi ?** L'URL MCP Composio est liée à un seul compte Google via OAuth. Pour que chaque utilisateur puisse utiliser son propre calendrier, il faudrait un flux d'authentification individuel.
 
 **Roadmap V8 — Google Calendar multi-utilisateurs :**
+
 - Ajouter un bouton "Connecter mon Google Calendar" dans la sidebar
 - Implémenter un flux OAuth 2.0 Google par utilisateur (redirection → autorisation → callback)
 - Stocker le token OAuth de chaque utilisateur dans sa session Streamlit (`st.session_state`)
@@ -155,6 +158,7 @@ Le basculement se fait **à chaud** via un registre d'agents (`register_agent`) 
 ## Profilage utilisateur (V5)
 
 La sidebar Streamlit permet de renseigner un profil optionnel :
+
 - Niveau technique (débutant → expert)
 - Temps disponible par semaine
 - Budget formation
@@ -282,34 +286,34 @@ Agent_Cyber_Career_Compass/
 
 ## Stack technique
 
-| Composant | Technologie |
-|-----------|-------------|
-| Framework agents | `openai-agents` (OpenAI Agents SDK) |
-| Protocole MCP | `MCPServerStreamableHttp` (Streamable HTTP) |
-| Provider MCP | Composio (Gmail + Google Calendar) |
-| Provider LLM principal | Groq API (Kimi K2) |
-| Provider LLM fallback | OpenRouter (modèles gratuits) |
-| Modèle principal | `moonshotai/kimi-k2-instruct` (tool-calling) |
-| Modèle guardrail | `llama-3.1-8b-instant` (classification rapide) |
-| Interface web | Streamlit |
-| APIs externes | MITRE ATT&CK, NIST NVD, France Travail, Composio MCP |
+| Composant              | Technologie                                          |
+| ---------------------- | ---------------------------------------------------- |
+| Framework agents       | `openai-agents` (OpenAI Agents SDK)                  |
+| Protocole MCP          | `MCPServerStreamableHttp` (Streamable HTTP)          |
+| Provider MCP           | Composio (Gmail + Google Calendar)                   |
+| Provider LLM principal | Groq API (Kimi K2)                                   |
+| Provider LLM fallback  | OpenRouter (modèles gratuits)                        |
+| Modèle principal       | `moonshotai/kimi-k2-instruct` (tool-calling)         |
+| Modèle guardrail       | `llama-3.1-8b-instant` (classification rapide)       |
+| Interface web          | Streamlit                                            |
+| APIs externes          | MITRE ATT&CK, NIST NVD, France Travail, Composio MCP |
 
 ---
 
 ## Exemples de questions
 
-| Question | Agents mobilisés |
-|----------|-----------------|
-| "Combien d'offres de pentester en France ?" | Market |
-| "C'est quoi le métier de SOC analyst ?" | get_plan_complet |
-| "SOC analyst vs incident responder ?" | get_plan_complet (×2) |
-| "Je suis dev Python, quel métier cyber ?" | Matching |
-| "Plan complet pour devenir pentester" | get_plan_complet + Market |
-| "Quelles techniques MITRE ATT&CK récentes ?" | Knowledge Map |
-| "Contexte du CVE-2024-3400 ?" | Knowledge Map |
-| "Comment exploiter une faille SQL ?" | ❌ Bloqué par guardrail |
-| *(clic bouton 📧)* | Agent Gmail MCP |
-| *(clic bouton 📅)* | Agent Google Calendar MCP |
+| Question                                     | Agents mobilisés          |
+| -------------------------------------------- | ------------------------- |
+| "Combien d'offres de pentester en France ?"  | Market                    |
+| "C'est quoi le métier de SOC analyst ?"      | get_plan_complet          |
+| "SOC analyst vs incident responder ?"        | get_plan_complet (×2)     |
+| "Je suis dev Python, quel métier cyber ?"    | Matching                  |
+| "Plan complet pour devenir pentester"        | get_plan_complet + Market |
+| "Quelles techniques MITRE ATT&CK récentes ?" | Knowledge Map             |
+| "Contexte du CVE-2024-3400 ?"                | Knowledge Map             |
+| "Comment exploiter une faille SQL ?"         | ❌ Bloqué par guardrail   |
+| _(clic bouton 📧)_                           | Agent Gmail MCP           |
+| _(clic bouton 📅)_                           | Agent Google Calendar MCP |
 
 ---
 
@@ -329,12 +333,12 @@ Agent_Cyber_Career_Compass/
 
 ## Historique des versions
 
-| Version | Description |
-|---------|-------------|
-| V4 | Simplification architecture : 4 tools au lieu de 8, `get_plan_complet` déterministe |
-| V5 | Profilage utilisateur (sidebar Streamlit), résultats personnalisés |
-| V5.1 | Guardrails renforcés (mots-clés offensifs élargis, fail-safe LLM) |
-| V6 | Fallback à chaud Groq → OpenRouter via registre d'agents (plus de `importlib.reload`) |
-| V7 | Intégration MCP : Gmail + Google Calendar via Composio (Streamable HTTP) |
-| V7.5 | Tool filtering MCP (1 tool exposé sur 22), fin des hallucinations Calendar |
-| V7.10 | Dates Calendar calculées en Python avec durées réelles par phase |
+| Version | Description                                                                           |
+| ------- | ------------------------------------------------------------------------------------- |
+| V4      | Simplification architecture : 4 tools au lieu de 8, `get_plan_complet` déterministe   |
+| V5      | Profilage utilisateur (sidebar Streamlit), résultats personnalisés                    |
+| V5.1    | Guardrails renforcés (mots-clés offensifs élargis, fail-safe LLM)                     |
+| V6      | Fallback à chaud Groq → OpenRouter via registre d'agents (plus de `importlib.reload`) |
+| V7      | Intégration MCP : Gmail + Google Calendar via Composio (Streamable HTTP)              |
+| V7.5    | Tool filtering MCP (1 tool exposé sur 22), fin des hallucinations Calendar            |
+| V7.10   | Dates Calendar calculées en Python avec durées réelles par phase                      |
