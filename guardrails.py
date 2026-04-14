@@ -1,6 +1,10 @@
 """
-Guardrails du Cyber Career Compass — V6.
+Guardrails du Cyber Career Compass — V8.
 
+V8 : Compatible mémoire conversationnelle — quand l'input est un historique
+     (liste de messages), le guardrail extrait le dernier message user pour
+     les couches 1-2 (mots-clés) et vérifie aussi le contexte complet.
+     La couche 3 (LLM) reçoit le contexte conversationnel pour juger.
 V6 : Le classifieur couche 3 utilise config.groq_model_fast via import module
      (pas `from config import groq_model_fast` qui fige la référence).
      Ainsi, switch_to_fallback() met à jour le modèle du classifieur aussi.
@@ -72,8 +76,29 @@ async def cyber_career_guardrail(ctx, agent, input):
     Couche 3 : LLM classifieur pour les cas ambigus (fail-safe : blocage si erreur).
 
     Conforme à SYS_07_GUARDRAIL.md
+
+    V8 : Compatible mémoire conversationnelle — quand l'input est une liste
+         de messages (historique), on extrait le dernier message utilisateur
+         pour les couches 1-2 (mots-clés) et on passe le contexte complet
+         à la couche 3 (LLM classifieur).
     """
-    input_str = str(input)
+    # V8 : extraire le dernier message utilisateur si l'input est un historique
+    if isinstance(input, list):
+        # Chercher le dernier message "user" dans la liste
+        last_user_msg = ""
+        for msg in reversed(input):
+            if isinstance(msg, dict) and msg.get("role") == "user":
+                last_user_msg = msg.get("content", "")
+                break
+        input_str = last_user_msg
+        # Contexte complet pour la couche 3 (LLM) — inclut l'historique
+        input_str_full = " ".join(
+            msg.get("content", "") for msg in input
+            if isinstance(msg, dict)
+        )
+    else:
+        input_str = str(input)
+        input_str_full = input_str
 
     # Couche 1 — Blocage immédiat si demande offensive opérationnelle
     if _is_obviously_offensive(input_str):
@@ -83,7 +108,9 @@ async def cyber_career_guardrail(ctx, agent, input):
         )
 
     # Couche 2 — Passage immédiat si mots-clés orientation/cyber évidents
-    if _is_obviously_cyber_career(input_str):
+    # V8 : on vérifie aussi l'historique complet — un message court comme
+    #       "Et côté salaire ?" est légitime si la conversation porte sur le cyber
+    if _is_obviously_cyber_career(input_str) or _is_obviously_cyber_career(input_str_full):
         return GuardrailFunctionOutput(
             output_info={"classification": "orientation_cyber (keywords)", "layer": 2},
             tripwire_triggered=False,
@@ -114,7 +141,14 @@ async def cyber_career_guardrail(ctx, agent, input):
             model=config.groq_model_fast,
         )
 
-        result = await Runner.run(classifier, input=input_str, max_turns=1)
+        # V8 : on passe le contexte complet au classifieur pour qu'il juge
+        # la requête dans son contexte conversationnel
+        classifier_input = (
+            f"Contexte de la conversation :\n{input_str_full}\n\n"
+            f"Dernière requête à classifier :\n{input_str}"
+        ) if input_str_full != input_str else input_str
+
+        result = await Runner.run(classifier, input=classifier_input, max_turns=1)
         classification = result.final_output.strip().lower()
 
         # Vérification stricte : la réponse doit contenir exactement un des deux termes
