@@ -1,7 +1,10 @@
 """
-Cyber Career Compass — Interface Streamlit V7
+Cyber Career Compass — Interface Streamlit V8
 Lancement : streamlit run app.py
 
+V8 : Mémoire conversationnelle — l'historique des échanges est envoyé au LLM
+     pour permettre des conversations multi-tours (suivi, précisions, relances).
+     Troncature automatique pour rester sous la limite de contexte Groq.
 V7 : Intégration MCP (Gmail + Google Calendar via Composio).
      Boutons "Envoyer par mail" et "Planifier dans Calendar" sous la réponse.
 V6 : Switch à chaud Groq → OpenRouter via config.switch_to_fallback().
@@ -179,6 +182,58 @@ def _enrichir_query(query: str, profil: dict) -> str:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# MÉMOIRE CONVERSATIONNELLE — construction de l'historique pour le Runner
+# ══════════════════════════════════════════════════════════════════════════════
+
+# Limite approximative en caractères pour l'historique envoyé au LLM.
+# Les réponses du Compass sont souvent longues (fiches métier, ressources…),
+# donc on garde un budget raisonnable pour ne pas exploser le contexte Groq (~8k tokens).
+MAX_HISTORY_CHARS = 6000  # ~1500 tokens — laisse de la place pour le system prompt + tools
+
+
+def _build_conversation_input(new_query: str, messages: list) -> list | str:
+    """Construit l'input pour Runner.run en incluant l'historique conversationnel.
+
+    - Si c'est le premier message → retourne simplement la string (comportement d'origine).
+    - Sinon → retourne une liste de dicts {"role": ..., "content": ...} compatible
+      avec le format EasyInputMessageParam du SDK OpenAI Agents.
+
+    L'historique est tronqué par l'arrière (on garde les messages les plus récents)
+    pour rester sous MAX_HISTORY_CHARS.
+    """
+    # Historique = tous les messages SAUF le dernier user (qu'on vient d'ajouter)
+    previous = messages[:-1] if messages else []
+
+    if not previous:
+        return new_query  # Premier message — pas d'historique
+
+    # Construire l'historique en partant des plus récents
+    history_items = []
+    total_chars = 0
+
+    for msg in reversed(previous):
+        msg_len = len(msg["content"])
+        if total_chars + msg_len > MAX_HISTORY_CHARS:
+            break  # On a atteint la limite — on s'arrête
+        history_items.append({
+            "role": msg["role"],
+            "content": msg["content"],
+        })
+        total_chars += msg_len
+
+    # Remettre dans l'ordre chronologique
+    history_items.reverse()
+
+    # Ajouter le nouveau message utilisateur à la fin
+    history_items.append({
+        "role": "user",
+        "content": new_query,
+    })
+
+    return history_items
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # EXEMPLES DE QUESTIONS
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -222,11 +277,16 @@ if user_input:
     # Enrichir avec le profil (invisible pour l'utilisateur)
     query_enrichie = _enrichir_query(user_input, st.session_state.profil)
 
+    # Construire l'input avec l'historique conversationnel
+    conversation_input = _build_conversation_input(
+        query_enrichie, st.session_state.messages
+    )
+
     with st.chat_message("assistant"):
         with st.spinner("Analyse en cours — consultation des agents spécialisés..."):
             try:
                 result = asyncio.run(
-                    Runner.run(manager, input=query_enrichie, max_turns=20)
+                    Runner.run(manager, input=conversation_input, max_turns=20)
                 )
                 response = result.final_output
 
