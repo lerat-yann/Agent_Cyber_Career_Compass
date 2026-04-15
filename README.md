@@ -4,6 +4,14 @@ Un assistant d'orientation vers les métiers de la cybersécurité, basé sur un
 
 > **[🚀 Démo live sur Streamlit Cloud](https://cyber-career-compass.streamlit.app/)**
 
+### 🎬 Vidéos de démonstration
+
+| Démo | Description |
+| ---- | ----------- |
+| [**Démo 1 — Plan pentester & mémoire conversationnelle**](https://youtu.be/oLaqMn80MYY) | Parcours complet "devenir pentester depuis zéro" avec prise en compte du profil utilisateur (niveau, temps, budget, anglais), orchestration multi-agents et mémoire conversationnelle |
+| [**Démo 2 — Matching profil → métiers cyber**](https://youtu.be/d7uPSb3oyoI) | Analyse d'un profil développeur Python et recommandation de métiers cyber adaptés |
+| [**Démo 3 — Guardrail : blocage offensif vs explication pédagogique**](https://youtu.be/P2RohCNmjZs) | Test du guardrail 3 couches : blocage d'une demande offensive, puis réponse pédagogique sur le même sujet |
+
 ---
 
 ## Ce que fait cet agent
@@ -124,7 +132,7 @@ Assemble de manière **déterministe** pour chaque métier :
 
 **Pourquoi ?** L'URL MCP Composio est liée à un seul compte Google via OAuth. Pour que chaque utilisateur puisse utiliser son propre calendrier, il faudrait un flux d'authentification individuel.
 
-**Roadmap — Google Calendar multi-utilisateurs :**
+**Roadmap V8 — Google Calendar multi-utilisateurs :**
 
 - Ajouter un bouton "Connecter mon Google Calendar" dans la sidebar
 - Implémenter un flux OAuth 2.0 Google par utilisateur (redirection → autorisation → callback)
@@ -165,16 +173,6 @@ La sidebar Streamlit permet de renseigner un profil optionnel :
 - Niveau d'anglais
 
 Le profil est injecté dans la requête pour personnaliser les recommandations (ressources adaptées au niveau, budget, langue).
-
----
-
-## Mémoire conversationnelle (V8)
-
-L'application conserve l'historique de la conversation et l'envoie au LLM à chaque tour, permettant des échanges multi-tours naturels :
-
-- **Suivi de contexte** — L'utilisateur peut poser une première question ("Comment devenir pentester ?") puis enchaîner ("Et côté salaire ?", "Quelles certifications en priorité ?") sans répéter le sujet.
-- **Troncature automatique** — L'historique est limité à ~6000 caractères (les messages les plus récents sont conservés en priorité) pour respecter la fenêtre de contexte Groq.
-- **Rétrocompatible** — Au premier message, le comportement est identique à la V7 (simple string envoyée au Runner).
 
 ---
 
@@ -352,4 +350,3 @@ Agent_Cyber_Career_Compass/
 | V7      | Intégration MCP : Gmail + Google Calendar via Composio (Streamable HTTP)              |
 | V7.5    | Tool filtering MCP (1 tool exposé sur 22), fin des hallucinations Calendar            |
 | V7.10   | Dates Calendar calculées en Python avec durées réelles par phase                      |
-| V8      | Mémoire conversationnelle — historique multi-tours avec troncature automatique         |
