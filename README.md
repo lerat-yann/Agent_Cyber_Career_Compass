@@ -130,6 +130,10 @@ Assemble de manière **déterministe** pour chaque métier :
 
 **Le bouton 📅 Google Calendar ne fonctionne que pour le compte du développeur.** Les événements sont créés dans le calendrier Google lié au compte Composio de l'application. Un utilisateur externe ne verra pas les événements dans son propre calendrier.
 
+**Preuve de fonctionnement** — Événement créé automatiquement par l'app dans Google Calendar :
+
+![Google Calendar — événement Cyber Compass](docs/calendar_demo.png)
+
 **Pourquoi ?** L'URL MCP Composio est liée à un seul compte Google via OAuth. Pour que chaque utilisateur puisse utiliser son propre calendrier, il faudrait un flux d'authentification individuel.
 
 **Roadmap V8 — Google Calendar multi-utilisateurs :**
@@ -139,6 +143,12 @@ Assemble de manière **déterministe** pour chaque métier :
 - Stocker le token OAuth de chaque utilisateur dans sa session Streamlit (`st.session_state`)
 - Passer le token utilisateur au serveur MCP Composio (via le paramètre `user_id` de l'URL ou via les Connected Accounts Composio)
 - Alternative : héberger un serveur MCP Google Calendar custom qui accepte un token par requête
+
+### ⚠️ Limitations du tier gratuit
+
+- **Mails tronqués** : les plans envoyés par mail sont nettoyés et limités à ~3000 caractères pour éviter les erreurs de tool-calling des modèles gratuits. Le plan complet reste visible dans le chat.
+- **Rate limits** : en cas de forte utilisation, l'application peut basculer automatiquement sur OpenRouter (modèles gratuits, réponses parfois plus lentes). Les quotas Groq se renouvellent chaque minute/jour.
+- **Passage au tier payant** : le Developer tier Groq (~10 $/mois pour un usage modéré) supprime ces limitations, avec la possibilité de plafonner les dépenses via la console Groq.
 
 ---
 
@@ -156,8 +166,9 @@ Validation en 3 couches :
 
 L'application utilise un **double provider** avec basculement automatique :
 
-- **Provider principal** : Groq (Kimi K2) — meilleur tool-calling gratuit
+- **Provider principal** : Groq (GPT-OSS 120B) — réponses riches et détaillées
 - **Provider fallback** : OpenRouter (modèles gratuits) — activé si Groq rate-limit (429)
+- **Provider MCP** : Groq (Llama 3.3 70B) — dédié Gmail/Calendar pour un tool-calling fiable
 
 Le basculement se fait **à chaud** via un registre d'agents (`register_agent`) — tous les agents sont mutés in-place sans redémarrage. Un bouton "Réessayer avec Groq" permet de revenir au provider principal.
 

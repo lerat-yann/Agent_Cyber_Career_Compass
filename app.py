@@ -360,12 +360,18 @@ if st.session_state.get("last_response"):
     with mcp_cols[0]:
         if MCP_GMAIL_AVAILABLE:
             if st.button("📧 Envoyer par mail", key="btn_mail", use_container_width=True):
-                st.session_state.show_mail_form = True
+                if config.PROVIDER == "openrouter":
+                    st.warning("📧 L'envoi par mail nécessite le provider Groq. Repassez sur Groq via le bouton dans la sidebar.")
+                else:
+                    st.session_state.show_mail_form = True
 
     with mcp_cols[1]:
         if MCP_CALENDAR_AVAILABLE:
             if st.button("📅 Planifier dans Calendar", key="btn_calendar", use_container_width=True):
-                st.session_state.show_calendar_confirm = True
+                if config.PROVIDER == "openrouter":
+                    st.warning("📅 La planification Calendar nécessite le provider Groq. Repassez sur Groq via le bouton dans la sidebar.")
+                else:
+                    st.session_state.show_calendar_confirm = True
 
     # ── Formulaire mail ──
     if st.session_state.get("show_mail_form"):
