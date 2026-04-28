@@ -1,7 +1,9 @@
 """
-Configuration du Cyber Career Compass — V6.
-Double provider : Groq (prioritaire, meilleur tool-calling) + OpenRouter (fallback).
+Configuration du Cyber Career Compass — V6.1.
+Double provider : Groq (prioritaire) + OpenRouter (fallback).
 
+V6.1 : Modèle principal migré de kimi-k2-instruct (déprécié par Groq)
+       vers openai/gpt-oss-120b (remplaçant officiel, 14 400 req/jour gratuit).
 V6 : Registre d'agents + switch à chaud (plus de importlib.reload).
   - register_agent(agent) : enregistre un agent dans le registre
   - switch_to_fallback()  : bascule TOUS les agents sur OpenRouter
@@ -79,7 +81,7 @@ _openrouter_model_fast = None
 
 if _groq_client:
     _groq_model_main = OpenAIChatCompletionsModel(
-        model="moonshotai/kimi-k2-instruct",
+        model="openai/gpt-oss-120b",
         openai_client=_groq_client,
     )
     _groq_model_fast = OpenAIChatCompletionsModel(
