@@ -390,7 +390,7 @@ if st.session_state.get("last_response"):
 
     # ── Confirmation Calendar ──
     if st.session_state.get("show_calendar_confirm"):
-        st.info("📅 Cela va créer des événements dans votre Google Calendar pour chaque étape du parcours.")
+        st.info("📅 Cela va créer des événements dans le Google Calendar de démonstration (compte développeur) pour chaque étape du parcours.")
         col_ok, col_cancel = st.columns(2)
         with col_ok:
             if st.button("✅ Confirmer", key="cal_confirm"):
