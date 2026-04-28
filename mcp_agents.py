@@ -85,6 +85,35 @@ def _extract_parcours(contenu: str) -> str:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# UTILITAIRE : Nettoyage du contenu pour tool-calling MCP
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _sanitize_for_mcp(contenu: str, max_chars: int = 3000) -> str:
+    """Nettoie le contenu pour éviter les erreurs de tool-calling.
+
+    Les modèles génèrent du JSON malformé quand le contenu est trop long
+    ou contient des caractères spéciaux (tableaux markdown, guillemets, etc.).
+    On convertit en texte simple et on tronque.
+    """
+    import re
+    lines = contenu.split("\n")
+    clean_lines = []
+    for line in lines:
+        if re.match(r'^\s*\|[\s\-:|]+\|\s*$', line):
+            continue
+        if "|" in line and line.strip().startswith("|"):
+            cells = [c.strip() for c in line.split("|") if c.strip()]
+            line = " — ".join(cells)
+        clean_lines.append(line)
+
+    text = "\n".join(clean_lines)
+    text = text.replace('"', "'").replace("\\", "/")
+    if len(text) > max_chars:
+        text = text[:max_chars] + "\n\n[... contenu tronque pour l'envoi mail]"
+    return text
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # FONCTION : Envoyer un plan par mail via Gmail MCP
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -92,6 +121,8 @@ async def _envoyer_mail_mcp(destinataire: str, sujet: str, contenu: str) -> str:
     """Connecte le serveur MCP Gmail, crée un agent, envoie le mail."""
     if not MCP_GMAIL_AVAILABLE:
         return "❌ Gmail MCP non configuré. Ajoutez COMPOSIO_MCP_GMAIL_URL et COMPOSIO_API_KEY dans les secrets."
+
+    contenu_clean = _sanitize_for_mcp(contenu)
 
     try:
         async with MCPServerStreamableHttp(
@@ -108,13 +139,13 @@ async def _envoyer_mail_mcp(destinataire: str, sujet: str, contenu: str) -> str:
                 name="Agent Gmail MCP",
                 instructions="Envoie l'email demandé via Gmail. Confirme en français.",
                 mcp_servers=[gmail_server],
-                model=config.groq_model_mcp,  # llama-3.3 — tool-calling fiable
+                model=config.groq_model_mcp,
             )
 
             task = (
                 f"Envoie un email à {destinataire} "
                 f"avec le sujet '{sujet}' "
-                f"et ce contenu :\n\n{contenu}"
+                f"et ce contenu :\n\n{contenu_clean}"
             )
 
             result = await Runner.run(agent_gmail, input=task, max_turns=5)
