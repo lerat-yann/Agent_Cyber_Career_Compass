@@ -1,10 +1,13 @@
 """
-Agents MCP du Cyber Career Compass — V7.5.
+Agents MCP du Cyber Career Compass — V8.
 
-Intègre Gmail et Google Calendar via Composio MCP (Streamable HTTP).
-Utilise tool_filter pour n'exposer que les tools nécessaires (1-2 par serveur)
-au lieu des 22 par défaut. Cela réduit les tokens de ~5000 à ~500,
-permettant d'envoyer le contenu intégral sous la limite Groq 10k.
+V8 : Les agents MCP utilisent config.groq_model_mcp (llama-3.3-70b-versatile)
+     au lieu de config.groq_model (gpt-oss-120b) car gpt-oss a un tool-calling
+     instable (JSON malformé). llama-3.3 est fiable pour les appels MCP.
+V7.5 : Intègre Gmail et Google Calendar via Composio MCP (Streamable HTTP).
+     Utilise tool_filter pour n'exposer que les tools nécessaires (1-2 par serveur)
+     au lieu des 22 par défaut. Cela réduit les tokens de ~5000 à ~500,
+     permettant d'envoyer le contenu intégral sous la limite Groq 10k.
 """
 
 import os
@@ -105,7 +108,7 @@ async def _envoyer_mail_mcp(destinataire: str, sujet: str, contenu: str) -> str:
                 name="Agent Gmail MCP",
                 instructions="Envoie l'email demandé via Gmail. Confirme en français.",
                 mcp_servers=[gmail_server],
-                model=config.groq_model,
+                model=config.groq_model_mcp,  # llama-3.3 — tool-calling fiable
             )
 
             task = (
@@ -179,7 +182,7 @@ async def _planifier_calendrier_mcp(contenu_plan: str) -> str:
                 name="Agent Google Calendar MCP",
                 instructions="Crée exactement les événements listés aux dates indiquées. Confirme en français.",
                 mcp_servers=[calendar_server],
-                model=config.groq_model,
+                model=config.groq_model_mcp,  # llama-3.3 — tool-calling fiable
             )
 
             task = (

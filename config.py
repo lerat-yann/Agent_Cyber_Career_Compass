@@ -76,6 +76,7 @@ if not _groq_client and not _openrouter_client:
 
 _groq_model_main = None
 _groq_model_fast = None
+_groq_model_mcp = None
 _openrouter_model_main = None
 _openrouter_model_fast = None
 
@@ -86,6 +87,11 @@ if _groq_client:
     )
     _groq_model_fast = OpenAIChatCompletionsModel(
         model="llama-3.1-8b-instant",
+        openai_client=_groq_client,
+    )
+    # Modèle dédié MCP — llama-3.3 a un tool-calling plus fiable que gpt-oss
+    _groq_model_mcp = OpenAIChatCompletionsModel(
+        model="llama-3.3-70b-versatile",
         openai_client=_groq_client,
     )
 
@@ -108,10 +114,12 @@ if _groq_client:
     PROVIDER = "groq"
     groq_model = _groq_model_main
     groq_model_fast = _groq_model_fast
+    groq_model_mcp = _groq_model_mcp
 else:
     PROVIDER = "openrouter"
     groq_model = _openrouter_model_main
     groq_model_fast = _openrouter_model_fast
+    groq_model_mcp = _openrouter_model_main  # fallback : OpenRouter pour MCP aussi
 
 HAS_FALLBACK = bool(_groq_client and _openrouter_client)
 
