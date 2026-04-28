@@ -146,7 +146,7 @@ with st.sidebar:
 # AFFICHAGE PROVIDER ACTIF
 # ══════════════════════════════════════════════════════════════════════════════
 
-provider_label = "🟢 Groq (kimi-k2)" if config.PROVIDER == "groq" else "🟡 OpenRouter (free)"
+provider_label = "🟢 Groq (gpt-oss-120b)" if config.PROVIDER == "groq" else "🟡 OpenRouter (free)"
 fallback_label = " · Fallback disponible" if config.HAS_FALLBACK else ""
 st.caption(f"Provider : {provider_label}{fallback_label}")
 
@@ -405,7 +405,7 @@ if st.session_state.get("last_response"):
 
 with st.sidebar:
     if config.PROVIDER == "openrouter" and config.HAS_FALLBACK:
-        if st.button("🔄 Réessayer avec Groq (kimi-k2)", use_container_width=True):
+        if st.button("🔄 Réessayer avec Groq (gpt-oss-120b)", use_container_width=True):
             config.switch_to_groq()
             st.rerun()
 
