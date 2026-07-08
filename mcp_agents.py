@@ -129,7 +129,9 @@ def _sanitize_for_mcp(contenu: str, max_chars: int = 1500) -> str:
 # ══════════════════════════════════════════════════════════════════════════════
 
 async def _envoyer_mail_mcp(destinataire: str, sujet: str, contenu: str) -> str:
-    """Connecte le serveur MCP Gmail, crée un agent, envoie le mail."""
+    """Envoi hybride : le LLM orchestre l'appel, mais le body volumineux
+    est injecte par le code au moment de l'appel MCP (le LLM ne le recopie
+    jamais -> plus de JSON malforme sur gros contenu)."""
     if not MCP_GMAIL_AVAILABLE:
         return "❌ Gmail MCP non configuré. Ajoutez COMPOSIO_MCP_GMAIL_URL et COMPOSIO_API_KEY dans les secrets."
 
@@ -146,17 +148,50 @@ async def _envoyer_mail_mcp(destinataire: str, sujet: str, contenu: str) -> str:
             tool_filter=_gmail_tool_filter,
         ) as gmail_server:
 
+            # ── Injection du body réel au moment de l'appel MCP ──
+            #
+            # DECISION TECHNIQUE : on remplace ici gmail_server.call_tool
+            # (monkey-patch) pour injecter le body volumineux cote code plutot
+            # que de le faire recopier par le LLM (llama-3.3 genere du JSON
+            # malforme sur gros payload -> 400 tool_use_failed).
+            #
+            # ALTERNATIVE "propre" NON RETENUE : le SDK expose un parametre
+            # `message_handler` sur MCPServerStreamableHttp, mecanisme officiel
+            # pour intercepter les messages JSON-RPC du protocole MCP. Plus
+            # idiomatique mais nettement plus verbeux pour un besoin ici trivial.
+            # A migrer vers message_handler si l'interception devient plus
+            # complexe (plusieurs tools, transformation des reponses, etc.).
+            # Ref SDK : https://openai.github.io/openai-agents-python/ref/mcp/server/
+            _original_call_tool = gmail_server.call_tool
+
+            async def _call_tool_avec_body_reel(tool_name, arguments):
+                arguments = dict(arguments or {})
+                arguments["body"] = contenu_clean      # on force le vrai body
+                arguments["is_html"] = False            # on force le format texte
+                if not arguments.get("recipient_email") and not arguments.get("to"):
+                    arguments["recipient_email"] = destinataire
+                return await _original_call_tool(tool_name, arguments)
+
+            gmail_server.call_tool = _call_tool_avec_body_reel
+
+            # Le LLM orchestre : il decide d'appeler GMAIL_SEND_EMAIL.
+            # Le body dans le prompt est un simple placeholder court.
             agent_gmail = Agent(
                 name="Agent Gmail MCP",
-                instructions="Envoie l'email demandé via Gmail. Confirme en français.",
+                instructions=(
+                    "Envoie un email via GMAIL_SEND_EMAIL. "
+                    "Pour le corps du message, mets simplement le texte "
+                    "'[BODY]' — il sera complété automatiquement. "
+                    "Confirme l'envoi en français."
+                ),
                 mcp_servers=[gmail_server],
                 model=config.groq_model_mcp,
             )
 
             task = (
                 f"Envoie un email à {destinataire} "
-                f"avec le sujet '{sujet}' "
-                f"et ce contenu :\n\n{contenu_clean}"
+                f"avec le sujet '{sujet}'. "
+                f"Corps du message : [BODY]"
             )
 
             result = await Runner.run(agent_gmail, input=task, max_turns=5)
