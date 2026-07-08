@@ -198,7 +198,9 @@ async def _envoyer_mail_mcp(destinataire: str, sujet: str, contenu: str) -> str:
             )
 
             result = await Runner.run(agent_gmail, input=task, max_turns=3)
-            return f"✅ Email envoyé à {destinataire}."
+            # On log la reponse brute du tool pour diagnostic
+            print(f"[MCP Gmail] Réponse brute : {result.final_output}")
+            return f"Réponse serveur : {result.final_output}"
 
     except Exception as e:
         return f"❌ Erreur envoi mail : {type(e).__name__}: {e}"
