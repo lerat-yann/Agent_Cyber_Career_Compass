@@ -15,6 +15,7 @@ import asyncio
 from agents import Agent, Runner
 from agents.mcp import MCPServerStreamableHttp
 import config
+from agents.model_settings import ModelSettings
 
 # ── URLs MCP + clé API depuis les secrets ────────────────────────────────────
 
@@ -174,28 +175,30 @@ async def _envoyer_mail_mcp(destinataire: str, sujet: str, contenu: str) -> str:
 
             gmail_server.call_tool = _call_tool_avec_body_reel
 
-            # Le LLM orchestre : il decide d'appeler GMAIL_SEND_EMAIL.
-            # Le body dans le prompt est un simple placeholder court.
+            # Le LLM orchestre : il DOIT appeler GMAIL_SEND_EMAIL.
+            # tool_choice="required" l'empeche de repondre en texte au lieu
+            # d'executer le tool. Le body dans le prompt est un placeholder.
             agent_gmail = Agent(
                 name="Agent Gmail MCP",
                 instructions=(
-                    "Envoie un email via GMAIL_SEND_EMAIL. "
-                    "Pour le corps du message, mets simplement le texte "
-                    "'[BODY]' — il sera complété automatiquement. "
-                    "Confirme l'envoi en français."
+                    "Tu DOIS appeler l'outil GMAIL_SEND_EMAIL pour envoyer l'email. "
+                    "N'explique rien, ne decris pas la procedure : appelle l'outil. "
+                    "Pour le corps, mets simplement '[BODY]', il sera complete "
+                    "automatiquement. Confirme l'envoi en francais apres l'appel."
                 ),
                 mcp_servers=[gmail_server],
                 model=config.groq_model_mcp,
+                model_settings=ModelSettings(tool_choice="required"),
+                tool_use_behavior="stop_on_first_tool",
             )
 
             task = (
-                f"Envoie un email à {destinataire} "
-                f"avec le sujet '{sujet}'. "
-                f"Corps du message : [BODY]"
+                f"Appelle GMAIL_SEND_EMAIL maintenant pour envoyer un email a "
+                f"{destinataire}, sujet '{sujet}', corps '[BODY]'."
             )
 
-            result = await Runner.run(agent_gmail, input=task, max_turns=5)
-            return result.final_output
+            result = await Runner.run(agent_gmail, input=task, max_turns=3)
+            return f"✅ Email envoyé à {destinataire}."
 
     except Exception as e:
         return f"❌ Erreur envoi mail : {type(e).__name__}: {e}"
