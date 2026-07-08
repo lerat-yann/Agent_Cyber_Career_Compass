@@ -88,14 +88,17 @@ def _extract_parcours(contenu: str) -> str:
 # UTILITAIRE : Nettoyage du contenu pour tool-calling MCP
 # ══════════════════════════════════════════════════════════════════════════════
 
-def _sanitize_for_mcp(contenu: str, max_chars: int = 3000) -> str:
+def _sanitize_for_mcp(contenu: str, max_chars: int = 1500) -> str:
     """Nettoie le contenu pour éviter les erreurs de tool-calling.
 
     Les modèles génèrent du JSON malformé quand le contenu est trop long
-    ou contient des caractères spéciaux (tableaux markdown, guillemets, etc.).
-    On convertit en texte simple et on tronque.
+    ou contient des caractères spéciaux (emojis, espaces insécables,
+    tableaux markdown, guillemets, etc.).
+    On convertit en ASCII simple et on tronque.
     """
     import re
+    import unicodedata
+
     lines = contenu.split("\n")
     clean_lines = []
     for line in lines:
@@ -103,11 +106,19 @@ def _sanitize_for_mcp(contenu: str, max_chars: int = 3000) -> str:
             continue
         if "|" in line and line.strip().startswith("|"):
             cells = [c.strip() for c in line.split("|") if c.strip()]
-            line = " — ".join(cells)
+            line = " - ".join(cells)
         clean_lines.append(line)
 
     text = "\n".join(clean_lines)
     text = text.replace('"', "'").replace("\\", "/")
+
+    # Normalisation ASCII : retire emojis, espaces insécables (\u00a0),
+    # tirets longs, étoiles et autres caractères qui cassent le tool-calling
+    text = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode("ascii")
+
+    # Nettoie les lignes devenues vides après suppression des emojis
+    text = "\n".join(l for l in text.split("\n") if l.strip())
+
     if len(text) > max_chars:
         text = text[:max_chars] + "\n\n[... contenu tronque pour l'envoi mail]"
     return text
