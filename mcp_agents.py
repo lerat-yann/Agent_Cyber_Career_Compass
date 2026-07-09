@@ -131,34 +131,47 @@ def _sanitize_for_mcp(contenu: str, max_chars: int = 1500) -> str:
 
 def _formater_resultat_mail(final_output) -> str:
     """Transforme la sortie brute du tool GMAIL_SEND_EMAIL en message clair.
-
-    Avec tool_use_behavior='stop_on_first_tool', result.final_output n'est pas
-    un texte du LLM mais la sortie du tool. Elle arrive typiquement sous la
-    forme {'type': 'text', 'text': '<json>'} (ou une liste de tels blocs).
-    On en extrait le champ `successful` pour décider du message affiché.
+    Robuste aux différentes formes de final_output selon le SDK :
+    chaîne JSON, dict {'type':'text','text':...}, liste de blocs, ou objet.
     """
     import json
 
-    bloc = final_output
+    def _extraire_texte(obj):
+        # Déballe récursivement jusqu'à une chaîne exploitable
+        if isinstance(obj, str):
+            return obj
+        if isinstance(obj, list):
+            for b in obj:
+                t = _extraire_texte(b)
+                if t:
+                    return t
+            return ""
+        if isinstance(obj, dict):
+            if "text" in obj:
+                return _extraire_texte(obj["text"])
+            return json.dumps(obj)
+        # Objet SDK : on tente .text puis str()
+        if hasattr(obj, "text"):
+            return _extraire_texte(obj.text)
+        return str(obj)
 
-    # Cas liste de blocs : on prend le premier bloc de type texte
-    if isinstance(bloc, list):
-        bloc = next(
-            (b for b in bloc if isinstance(b, dict) and b.get("type") == "text"),
-            bloc[0] if bloc else {},
-        )
+    texte = _extraire_texte(final_output)
 
-    # Extraction de la chaîne JSON depuis {'type': 'text', 'text': '...'}
-    payload = bloc
-    if isinstance(bloc, dict) and "text" in bloc:
-        try:
-            payload = json.loads(bloc["text"])
-        except (json.JSONDecodeError, TypeError):
-            # Le tool a renvoyé du texte libre, pas du JSON : on suppose OK
-            return "✅ Votre mail a bien été envoyé."
+    payload = None
+    try:
+        payload = json.loads(texte)
+    except (json.JSONDecodeError, TypeError):
+        payload = None
 
-    # Champ fiable : 'successful' (deux 'l'). Le doublon 'successfull' est ignoré.
-    if isinstance(payload, dict) and payload.get("successful") is True:
+    # Si le JSON dit succès (deux graphies vues côté Composio : successful / successfull)
+    if isinstance(payload, dict) and (
+        payload.get("successful") is True or payload.get("successfull") is True
+    ):
+        return "✅ Votre mail a bien été envoyé."
+
+    # Filet de sécurité : si le parsing échoue mais que le texte contient
+    # clairement un succès (label SENT), on considère l'envoi réussi.
+    if '"labelIds":["SENT"]' in texte or "'labelIds': ['SENT']" in texte:
         return "✅ Votre mail a bien été envoyé."
 
     erreur = payload.get("error") if isinstance(payload, dict) else None
@@ -241,9 +254,9 @@ async def _envoyer_mail_mcp(destinataire: str, sujet: str, contenu: str) -> str:
 
             result = await Runner.run(agent_gmail, input=task, max_turns=3)
             # On log la reponse brute du tool pour diagnostic
-            print(f"[MCP Gmail] Réponse brute : {result.final_output}")  # log diagnostic conservé
+            print(f"[MCP Gmail] TYPE : {type(result.final_output)}")
+            print(f"[MCP Gmail] Réponse brute : {result.final_output!r}")
             return _formater_resultat_mail(result.final_output)
-
     except Exception as e:
         return f"❌ Erreur envoi mail : {type(e).__name__}: {e}"
 
